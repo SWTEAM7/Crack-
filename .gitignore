@@ -1,0 +1,12 @@
+# build outputs
+*.obj
+*.exe
+*.lib
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.o
+*.a
+*.so
+*.dylib
