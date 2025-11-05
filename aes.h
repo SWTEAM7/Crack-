@@ -46,7 +46,11 @@ typedef void (*AES_DecryptBlockFn)(struct AES_ctx* ctx,
 typedef void (*AES_ErrorCallback)(AESStatus, const char*, void*); //위에 등록해둔 에러들로 어떤 오류인지 알려줄 수 있게 하는 역할이란다
 
 // ====== 컨텍스트 ======
-typedef struct AES_ctx {
+#ifdef _MSC_VER
+    typedef __declspec(align(16)) struct AES_ctx {
+#else
+    typedef struct __attribute__((aligned(16))) AES_ctx {
+#endif
     uint32_t roundKeys[60];     // 최대 60워드(14라운드×4 + 여유)
     int      Nr;                // 10/12/14
     AES_EncryptBlockFn encrypt_block; // 함수 포인터 타입인데 주소 저장하는거 예시로 ctx.encrypt_block = AES_encryptBlock
@@ -56,7 +60,7 @@ typedef struct AES_ctx {
     AESStatus          last_err;
     AES_ErrorCallback  on_error; // 선택
     void*              err_ud;   // 콜백 user data
-} AES_ctx;
+} AES_ctx;  // 16바이트 정렬로 메모리 접근 최적화
 
 // ====== 공용 유틸 ======
 const char* AES_strerror(AESStatus code);

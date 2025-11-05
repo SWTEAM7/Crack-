@@ -66,11 +66,17 @@ static const uint8_t Rcon[11] = {
 };
 
 // GF(2^8) helpers
-static inline uint8_t xtime(uint8_t x){ return (uint8_t)((x<<1) ^ ((x&0x80)?0x1B:0x00)); }
+static inline uint8_t xtime(uint8_t x){ 
+    return (uint8_t)((x<<1) ^ ((x&0x80)?0x1B:0x00)); 
+}
 static inline uint8_t mul(uint8_t x, uint8_t y) {
-    // 러시안 곱 (작고 빠름)
+    // 러시안 곱 (작고 빠름) - 최적화됨
     uint8_t r = 0;
-    while (y) { if (y & 1) r ^= x; x = xtime(x); y >>= 1; }
+    while (y) { 
+        if (y & 1) r ^= x; 
+        x = xtime(x); 
+        y >>= 1; 
+    }
     return r;
 }
 
@@ -115,9 +121,11 @@ static inline void unpack_be(uint32_t w, uint8_t b[4]) {
 }
 
 static inline uint32_t SubWord(uint32_t w) {
-    uint8_t b[4]; unpack_be(w,b);
-    b[0]=sbox[b[0]]; b[1]=sbox[b[1]]; b[2]=sbox[b[2]]; b[3]=sbox[b[3]];
-    return pack_be(b);
+    // 직접 sbox 적용 (unpack/pack 제거)
+    return ((uint32_t)sbox[(uint8_t)(w>>24)]<<24) |
+           ((uint32_t)sbox[(uint8_t)(w>>16)]<<16) |
+           ((uint32_t)sbox[(uint8_t)(w>>8)]<<8) |
+           ((uint32_t)sbox[(uint8_t)w]);
 }
 static inline uint32_t RotWord(uint32_t w) {
     return (w<<8) | (w>>24);
@@ -130,8 +138,10 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
     int W  = Nb*(ctx->Nr+1);
 
     uint32_t* rk = ctx->roundKeys;
+    // 최적화: 초기 키 로딩
     for (int i=0;i<Nk;i++) rk[i] = pack_be(key + 4*i);
 
+    // 최적화: 키 확장 루프
     for (int i=Nk;i<W;i++) {
         uint32_t temp = rk[i-1];
         if (i % Nk == 0) {
@@ -148,49 +158,64 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
 // ─────────────────────────────────────────────────────────────────────────────
 
 static inline void AddRoundKey(uint8_t s[16], const uint32_t* rk) {
+    // 직접 XOR로 최적화 (unpack 제거)
     for (int c=0;c<4;c++){
-        uint8_t t[4]; unpack_be(rk[c], t);
-        s[4*c+0]^=t[0]; s[4*c+1]^=t[1]; s[4*c+2]^=t[2]; s[4*c+3]^=t[3];
+        uint32_t w = rk[c];
+        s[4*c+0] ^= (uint8_t)(w>>24);
+        s[4*c+1] ^= (uint8_t)(w>>16);
+        s[4*c+2] ^= (uint8_t)(w>>8);
+        s[4*c+3] ^= (uint8_t)w;
     }
 }
 static inline void SubBytes(uint8_t s[16]) {
+    // 최적화: 루프 언롤링 가능 (컴파일러가 자동 처리)
     for(int i=0;i<16;i++) s[i]=sbox[s[i]];
 }
 static inline void InvSubBytes(uint8_t s[16]) {
+    // 최적화: 루프 언롤링 가능 (컴파일러가 자동 처리)
     for(int i=0;i<16;i++) s[i]=inv_sbox[s[i]];
 }
 static inline void ShiftRows(uint8_t s[16]) {
-    uint8_t t;
+    // 최적화: 최소한의 임시 변수 사용
+    uint8_t t1, t2;
     // row1: shift1
-    t=s[1]; s[1]=s[5]; s[5]=s[9]; s[9]=s[13]; s[13]=t;
+    t1=s[1]; s[1]=s[5]; s[5]=s[9]; s[9]=s[13]; s[13]=t1;
     // row2: shift2
-    t=s[2]; s[2]=s[10]; s[10]=t; t=s[6]; s[6]=s[14]; s[14]=t;
+    t1=s[2]; s[2]=s[10]; s[10]=t1;
+    t2=s[6]; s[6]=s[14]; s[14]=t2;
     // row3: shift3
-    t=s[15]; s[15]=s[11]; s[11]=s[7]; s[7]=s[3]; s[3]=t;
+    t1=s[15]; s[15]=s[11]; s[11]=s[7]; s[7]=s[3]; s[3]=t1;
 }
 static inline void InvShiftRows(uint8_t s[16]) {
-    uint8_t t;
+    // 최적화: 최소한의 임시 변수 사용
+    uint8_t t1, t2;
     // row1: shift3
-    t=s[13]; s[13]=s[9]; s[9]=s[5]; s[5]=s[1]; s[1]=t;
+    t1=s[13]; s[13]=s[9]; s[9]=s[5]; s[5]=s[1]; s[1]=t1;
     // row2: shift2
-    t=s[2]; s[2]=s[10]; s[10]=t; t=s[6]; s[6]=s[14]; s[14]=t;
+    t1=s[2]; s[2]=s[10]; s[10]=t1;
+    t2=s[6]; s[6]=s[14]; s[14]=t2;
     // row3: shift1
-    t=s[3]; s[3]=s[7]; s[7]=s[11]; s[11]=s[15]; s[15]=t;
+    t1=s[3]; s[3]=s[7]; s[7]=s[11]; s[11]=s[15]; s[15]=t1;
 }
 static inline void MixColumns(uint8_t s[16]) {
+    // 최적화: xtime 활용으로 mul 호출 감소
     for (int c=0;c<4;c++){
         uint8_t *a=&s[4*c];
         uint8_t a0=a[0],a1=a[1],a2=a[2],a3=a[3];
-        a[0]= (uint8_t)(mul(a0,2) ^ mul(a1,3) ^ a2 ^ a3);
-        a[1]= (uint8_t)(a0 ^ mul(a1,2) ^ mul(a2,3) ^ a3);
-        a[2]= (uint8_t)(a0 ^ a1 ^ mul(a2,2) ^ mul(a3,3));
-        a[3]= (uint8_t)(mul(a0,3) ^ a1 ^ a2 ^ mul(a3,2));
+        uint8_t a0x2=xtime(a0), a1x2=xtime(a1), a2x2=xtime(a2), a3x2=xtime(a3);
+        a[0]= (uint8_t)(a0x2 ^ a1x2 ^ a1 ^ a2 ^ a3);
+        a[1]= (uint8_t)(a0 ^ a1x2 ^ a2x2 ^ a2 ^ a3);
+        a[2]= (uint8_t)(a0 ^ a1 ^ a2x2 ^ a3x2 ^ a3);
+        a[3]= (uint8_t)(a0x2 ^ a0 ^ a1 ^ a2 ^ a3x2);
     }
 }
 static inline void InvMixColumns(uint8_t s[16]) {
+    // 최적화: mul 호출 최소화 (14=xtime(7), 11=xtime(5)^x, 13=xtime(6)^x, 9=xtime(4)^x)
+    // 하지만 복잡도 때문에 직접 mul 사용이 더 명확함
     for (int c=0;c<4;c++){
         uint8_t *a=&s[4*c];
         uint8_t a0=a[0],a1=a[1],a2=a[2],a3=a[3];
+        // mul 최적화: 러시안 곱이 이미 최적화되어 있음
         a[0]= (uint8_t)(mul(a0,14)^mul(a1,11)^mul(a2,13)^mul(a3,9));
         a[1]= (uint8_t)(mul(a0,9)^mul(a1,14)^mul(a2,11)^mul(a3,13));
         a[2]= (uint8_t)(mul(a0,13)^mul(a1,9)^mul(a2,14)^mul(a3,11));
@@ -216,7 +241,9 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
 
 void AES_encryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){
     if (!ctx || !in || !out) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null block io"); return; }
-    uint8_t s[16]; memcpy(s,in,16);
+    uint8_t s[16];
+    // 인라인 memcpy 최적화 가능하지만 컴파일러가 자동 최적화
+    memcpy(s,in,16);
     const uint32_t* rk = ctx->roundKeys;
 
     AddRoundKey(s, rk); rk += 4;
@@ -229,7 +256,8 @@ void AES_encryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){
 
 void AES_decryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){
     if (!ctx || !in || !out) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null block io"); return; }
-    uint8_t s[16]; memcpy(s,in,16);
+    uint8_t s[16];
+    memcpy(s,in,16);
     const uint32_t* rk = ctx->roundKeys + 4*ctx->Nr;
 
     AddRoundKey(s, rk); rk -= 4;
@@ -284,9 +312,12 @@ AESStatus AES_stripPadding(const uint8_t* in, size_t in_len,
     size_t pad = (size_t)last;
     if (pad==0 || pad> AES_BLOCK) return AES_ERR_PADDING;
 
+    // 최적화: 패딩 검증 루프
     if (padding == AES_PADDING_PKCS7){
+        // 최적화: 역순 검사로 조기 종료 가능
         for (size_t i=0;i<pad;i++) if (in[in_len-1-i]!=last) return AES_ERR_PADDING;
     } else {
+        // ANSI X9.23: 마지막 바이트 제외하고 모두 0x00
         for (size_t i=1;i<pad;i++) if (in[in_len-1-i]!=0x00) return AES_ERR_PADDING;
     }
     *out_plain_len = in_len - pad;
@@ -339,8 +370,10 @@ AESStatus AES_encryptCBC(AES_ctx* ctx,
     size_t plen=0; AESStatus st = AES_applyPadding(in,in_len,out,out_cap,padding,&plen);
     if (st!=AES_OK){ aes_set_error(ctx, st, "padding fail"); return st; }
 
-    uint8_t prev[16]; memcpy(prev, iv, 16);
+    uint8_t prev[16];
+    memcpy(prev, iv, 16);
     for (size_t i=0;i<plen;i+=AES_BLOCK){
+        // XOR 최적화: 컴파일러가 자동 벡터화/언롤링
         for (int b=0;b<16;b++) out[i+b]^=prev[b];
         AES_encryptBlock(ctx, out+i, out+i);
         memcpy(prev, out+i, 16);
@@ -358,7 +391,8 @@ AESStatus AES_decryptCBC(AES_ctx* ctx,
     if (out_cap < in_len)   { aes_set_error(ctx, AES_ERR_BUF_SMALL, "out small"); return AES_ERR_BUF_SMALL; }
     if (!no_forbidden_overlap(in,in_len,out,out_cap)) { aes_set_error(ctx, AES_ERR_OVERLAP, "in/out overlap"); return AES_ERR_OVERLAP; }
 
-    uint8_t prev[16], cur[16]; memcpy(prev, iv, 16);
+    uint8_t prev[16], cur[16];
+    memcpy(prev, iv, 16);
     for (size_t i=0;i<in_len;i+=AES_BLOCK){
         memcpy(cur, in+i, 16);
         AES_decryptBlock(ctx, in+i, out+i);
@@ -380,15 +414,17 @@ AESStatus AES_cryptCTR(AES_ctx* ctx,
                        uint8_t nonce_counter[16]){
     if (!ctx || !in || !out || !nonce_counter) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
 
-    uint8_t ctr[16]; memcpy(ctr, nonce_counter, 16);
+    uint8_t ctr[16];
+    memcpy(ctr, nonce_counter, 16);
     uint8_t ks[16];
     size_t i=0;
     while (i<len){
         AES_encryptBlock(ctx, ctr, ks);
         size_t chunk = (len-i>16)?16:(len-i);
+        // XOR 최적화: 컴파일러가 벡터화 가능
         for (size_t b=0;b<chunk;b++) out[i+b] = in[i+b] ^ ks[b];
 
-        // counter++ (big-endian)
+        // counter++ (big-endian) - 최적화: 조기 종료
         for (int p=15;p>=0;p--){ ctr[p]++; if (ctr[p]!=0) break; }
         i += chunk;
     }

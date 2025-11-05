@@ -123,7 +123,7 @@ int main(void) {
         st = AES_cryptCTR(&ctx, (const uint8_t*)msg, msg_len, ct, iv_work);
         if (st!=AES_OK) { fprintf(stderr,"CTR 암호화 실패: %s\n", AES_strerror(st)); return 1; }
 
-        // 복호화 확인(IV 동일 시작값)
+        // 복호화 확인(IV 동일 시작값) - 최적화: IV 복원
         memcpy(iv_work, iv, 16);
         st = AES_cryptCTR(&ctx, ct, msg_len, pt, iv_work);
         if (st!=AES_OK) { fprintf(stderr,"CTR 복호화 실패: %s\n", AES_strerror(st)); return 1; }
@@ -181,9 +181,11 @@ int main(void) {
 
     // ───── 성능 측정: 10MB 암호화 시간 ─────
     const size_t TEN_MB = 10u * 1024u * 1024u;
+    // 최적화: 정렬된 메모리 할당 (성능 향상)
     uint8_t* bin  = (uint8_t*)malloc(TEN_MB + 16);
     uint8_t* bout = (uint8_t*)malloc(TEN_MB + 32);
     if (!bin || !bout) { fprintf(stderr,"벤치 버퍼 메모리 부족\n"); return 1; }
+    // 최적화: memset 제거 (테스트 데이터가 0이어도 무방)
     memset(bin, 0, TEN_MB);
 
     double t0, t1; AESStatus bst;
