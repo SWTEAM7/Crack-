@@ -7,6 +7,8 @@
  * @date 2024
  */
 
+#pragma execution_character_set("utf-8")
+
 #ifndef AES_H
 #define AES_H
 
@@ -245,7 +247,7 @@ AESStatus AES_decryptECB(AES_ctx* ctx,
  * - 장점: 동일한 평문 블록도 다른 암호문 생성 (ECB 문제 해결)
  * - 단점: 
  *   * 직렬 의존성 (병렬화 어려움)
- *   * 패딩 필요 → 패딩 오라클 공격 위험
+ *   * 패딩 필요 -> 패딩 오라클 공격 위험
  *   * IV 재사용 시 정보 누설
  *   * 비트플립이 다음 블록 평문에 전파 (무결성 미보장)
  * - 주의: IV는 매번 랜덤하게 생성되어야 함! 상위에서 무결성(HMAC/AEAD) 필수
@@ -289,7 +291,7 @@ AESStatus AES_decryptCBC(AES_ctx* ctx,
  * 
  * ⚠️ 주의사항:
  * - nonce+카운터 재사용 금지! (같은 키로 재사용 시 치명적 정보 누설)
- * - 스트림 XOR 방식이라 변조가 쉬움 → 반드시 MAC/AEAD(GCM)로 무결성 보강 필요
+ * - 스트림 XOR 방식이라 변조가 쉬움 -> 반드시 MAC/AEAD(GCM)로 무결성 보강 필요
  */
 AESStatus AES_cryptCTR(AES_ctx* ctx,
                        const uint8_t* in, size_t len,

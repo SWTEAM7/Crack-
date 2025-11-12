@@ -1,77 +1,19 @@
 /* =========================================================================
- * sha512.h — SHA‑512, HMAC‑SHA‑512, HKDF‑SHA‑512 (RFC 6234 / RFC 4231 / RFC 5869)
+ * sha512.h - SHA-512, HMAC-SHA-512, HKDF-SHA-512 (RFC 6234 / RFC 4231 / RFC 5869)
  * C99 순수 구현 (동적 할당 없음). 라이선스: 퍼블릭 도메인/CC0 유사.
  *
  * 목적: AES2(보안형)에서
- * - SHA‑512: 해시 기본 원시
- * - HMAC‑SHA‑512: 무결성 태그 생성
- * - HKDF‑SHA‑512: 라운드키/ MAC 키 독립 파생(Extract + Expand)
+ * - SHA-512: 해시 기본 원시
+ * - HMAC-SHA-512: 무결성 태그 생성
+ * - HKDF-SHA-512: 라운드키/ MAC 키 독립 파생(Extract + Expand)
  *
  * 빌드 예시:
  * clang -O3 -std=c99 -Wall -Wextra -pedantic sha512.c aes.c test.c -o test
  * cl /O2 /W4 /D_CRT_SECURE_NO_WARNINGS sha512.c aes.c test.c
  * ------------------------------------------------------------------------- */
-#ifndef SHA512_H
-#define SHA512_H
+#pragma execution_character_set("utf-8")
 
-#include <stdint.h>
-#include <stddef.h>
-
-#define SHA512_DIGEST_LEN 64u     /* 출력 해시 길이(바이트) */
-#define SHA512_BLOCK_LEN  128u    /* 내부 블록 크기(바이트) */
-
-/* --- 해시 상태 ---------------------------------------------------------- */
-typedef struct {
-    uint64_t h[8];         /* 체이닝 상태(8×64비트) */
-    uint64_t tot_len_hi;   /* 처리한 총 바이트 수(128비트 카운터 상위) */
-    uint64_t tot_len_lo;   /* 처리한 총 바이트 수(128비트 카운터 하위) */
-    uint8_t  buf[SHA512_BLOCK_LEN]; /* 부분 블록 버퍼(최대 127바이트) */
-    size_t   buf_len;      /* 현재 버퍼에 쌓인 바이트 수(0..127) */
-} SHA512_CTX;
-
-/* --- 해시 API ----------------------------------------------------------- */
-void sha512_init(SHA512_CTX* c);                                    /* 초기화 */
-void sha512_update(SHA512_CTX* c, const void* data, size_t len);     /* 데이터 추가 */
-void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]);    /* 최종 출력 */
-
-/* 원샷(one‑shot) 해시 */
-void sha512(const void* data, size_t len, uint8_t out[SHA512_DIGEST_LEN]);
-
-/* --- HMAC (RFC 2104/4231) ---------------------------------------------- */
-#define HMAC_SHA512_LEN 64u
-void hmac_sha512(const uint8_t* key, size_t key_len,
-                 const uint8_t* msg, size_t msg_len,
-                 uint8_t out[HMAC_SHA512_LEN]);
-
-/* --- HKDF (RFC 5869) : SHA‑512 사용 ------------------------------------ */
-#define HKDF_SHA512_PRK_LEN 64u
-#define HKDF_SHA512_OK   0
-#define HKDF_SHA512_ERR -1
-
-/* HKDF‑Extract: PRK = HMAC(salt, IKM) */
-void hkdf_sha512_extract(const uint8_t* salt, size_t salt_len,
-                         const uint8_t* ikm,  size_t ikm_len,
-                         uint8_t prk[HKDF_SHA512_PRK_LEN]);
-
-/* HKDF‑Expand: okm_len ≤ 255*HashLen (≈ 16320B) */
-int hkdf_sha512_expand(const uint8_t* prk,
-                       const uint8_t* info, size_t info_len,
-                       uint8_t* okm, size_t okm_len);
-
-/* 편의 함수: Extract + Expand 한 번에 */
-int hkdf_sha512(const uint8_t* salt, size_t salt_len,
-                const uint8_t* ikm,  size_t ikm_len,
-                const uint8_t* info, size_t info_len,
-                uint8_t* okm, size_t okm_len);
-
-/* --- 보조 유틸(상수시간/메모리 지우기) ---------------------------------- */
-void secure_zero(void* p, size_t n);                 /* 민감 데이터 지우기 */
-int  ct_memcmp(const void* a, const void* b, size_t n); /* 상수시간 비교(같으면 0) */
-
-/* 자기진단(간단 KAT): 성공 시 0, 실패 시 !=0 */
-int sha512_selftest(void);
-
-#endif /* SHA512_H */
+#include "sha512.h"
 
 /* =========================================================================
  * sha512.c — 구현부
@@ -95,7 +37,7 @@ static inline uint64_t bswap64(uint64_t x){
            ((x & 0xFF00000000000000ull) >> 56);
 }
 
-/* SHA‑512 라운드 상수(소수의 세제곱근 분수부) */
+/* SHA-512 라운드 상수(소수의 세제곱근 분수부) */
 static const uint64_t K[80] = {
   0x428a2f98d728ae22ULL,0x7137449123ef65cdULL,0xb5c0fbcfec4d3b2fULL,0xe9b5dba58189dbbcULL,
   0x3956c25bf348b538ULL,0x59f111f1b605d019ULL,0x923f82a4af194f9bULL,0xab1c5ed5da6d8118ULL,
@@ -122,7 +64,7 @@ static const uint64_t K[80] = {
 /* 단일 1024비트 블록 압축 함수 */
 static void sha512_compress(uint64_t state[8], const uint8_t block[128]){
     uint64_t w[80];
-    /* 입력을 16개의 64비트 big‑endian 워드로 적재 */
+    /* 입력을 16개의 64비트 big-endian 워드로 적재 */
     for (int i=0;i<16;i++){
         uint64_t t;
         memcpy(&t, block + 8*i, 8);
@@ -169,7 +111,7 @@ static void add_length(SHA512_CTX* c, uint64_t add){
 }
 
 void sha512_init(SHA512_CTX* c){
-    /* 초기화 벡터(FIPS 180‑4) */
+    /* 초기화 벡터(FIPS 180-4) */
     static const uint64_t iv[8] = {
         0x6a09e667f3bcc908ULL,0xbb67ae8584caa73bULL,0x3c6ef372fe94f82bULL,0xa54ff53a5f1d36f1ULL,
         0x510e527fade682d1ULL,0x9b05688c2b3e6c1fULL,0x1f83d9abfb41bd6bULL,0x5be0cd19137e2179ULL
@@ -224,7 +166,7 @@ void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]){
     }
     memset(c->buf + c->buf_len, 0, (SHA512_BLOCK_LEN - 16) - c->buf_len);
 
-    /* 총 길이(바이트) → 비트로 변환해 128비트 big‑endian으로 저장 */
+    /* 총 길이(바이트)를 비트로 변환해 128비트 big-endian으로 저장 */
     uint64_t hi = c->tot_len_hi; /* 바이트 */
     uint64_t lo = c->tot_len_lo;
     uint64_t bits_hi = (hi << 3) | (lo >> 61);
@@ -238,7 +180,7 @@ void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]){
     memcpy(c->buf + SHA512_BLOCK_LEN - 8,  &bits_lo, 8);
     sha512_compress(c->h, c->buf);
 
-    /* 최종 해시를 big‑endian으로 출력 */
+    /* 최종 해시를 big-endian으로 출력 */
     for (int i=0;i<8;i++){
         uint64_t w = c->h[i];
 /* MSVC 윈도우 호환성을 위해 _WIN32 추가 */
@@ -397,14 +339,14 @@ static int check_hex(const uint8_t* got, const char* hex){
 }
 
 int sha512_selftest(void){
-    /* SHA‑512("") 공백 문자열 테스트(FIPS 180‑4) */
+    /* SHA-512("") 공백 문자열 테스트(FIPS 180-4) */
     static const char* empty_full =
       "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce"
       "47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e";
     uint8_t d[64]; sha512("", 0, d);
     if (check_hex(d, empty_full)) return -1;
 
-    /* RFC 4231 HMAC‑SHA‑512: Test Case 1 */
+    /* RFC 4231 HMAC-SHA-512: Test Case 1 */
     /* const uint8_t key_tc1[20] = { [0 ... 19] = 0x0b }; */ /* MSVC 호환성을 위해 memset 사용 */
     uint8_t key_tc1[20];
     memset(key_tc1, 0x0b, sizeof(key_tc1));
@@ -417,7 +359,7 @@ int sha512_selftest(void){
     hmac_sha512(key_tc1, sizeof(key_tc1), (const uint8_t*)data_tc1, 8, d);
     if (check_hex(d, mac_tc1_hex)) return -2;
 
-    /* (선택) HKDF‑SHA‑512 RFC 5869 일부 스팟 체크: 구현 검증용 간단 검증 */
+    /* (선택) HKDF-SHA-512 RFC 5869 일부 스팟 체크: 구현 검증용 간단 검증 */
     /* const uint8_t ikm[22] = { [0 ... 21] = 0x0b }; */ /* MSVC 호환성을 위해 memset 사용 */
     uint8_t ikm[22];
     memset(ikm, 0x0b, sizeof(ikm));

@@ -1,4 +1,4 @@
-// test.c — SHA-512 / HMAC-SHA-512 / (옵션) HKDF-SHA-512 테스트 드라이버
+// test.c - SHA-512 / HMAC-SHA-512 / (옵션) HKDF-SHA-512 테스트 드라이버
 // 빌드 예시:
 //   clang -O3 -std=c99 -Wall -Wextra sha512.c test.c -o test
 //   cl /O2 /W4 /D_CRT_SECURE_NO_WARNINGS sha512.c test.c
@@ -8,6 +8,8 @@
 //   (Windows) cl /O2 /W4 /DTEST_WITH_OPENSSL sha512.c test.c /link libcrypto.lib
 //
 // 실행 결과가 모두 OK면 0을 리턴합니다.
+
+#pragma execution_character_set("utf-8")
 
 #include <stdio.h>
 #include <string.h>
@@ -35,7 +37,7 @@ static int expect_hex_eq(const uint8_t* got, size_t n, const char* hex){
 
 static int test_selftest(void){
     int rc = sha512_selftest();
-    printf("[selftest] rc=%d — %s\n", rc, rc==0?"OK":"FAIL");
+    printf("[selftest] rc=%d - %s\n", rc, rc==0?"OK":"FAIL");
     return rc==0 ? 0 : -1;
 }
 

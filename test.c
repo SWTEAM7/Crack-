@@ -19,11 +19,13 @@
  */
 
 #include "aes.h"
+#include "aes2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include <time.h>
+#include <stdbool.h>
 
 #if defined(_WIN32)
   #include <windows.h>  // Windows API (QueryPerformanceCounter 등)
@@ -83,6 +85,340 @@ static double now_seconds(void) {
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 #endif
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AES2 전용 헬퍼
+// ─────────────────────────────────────────────────────────────────────────────
+static size_t read_line_trim(char* buf, size_t cap) {
+    if (!fgets(buf, (int)cap, stdin)) return 0;
+    size_t len = strcspn(buf, "\r\n");
+    buf[len] = '\0';
+    return len;
+}
+
+static int hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+static int parse_hex_exact(const char* s, uint8_t* out, size_t expected_len) {
+    size_t count = 0;
+    int high = -1;
+    for (; *s; ++s) {
+        if (*s == ' ' || *s == '\t') continue;
+        int v = hex_digit(*s);
+        if (v < 0) return -1;
+        if (high < 0) {
+            high = v;
+        } else {
+            if (count >= expected_len) return -1;
+            out[count++] = (uint8_t)((high << 4) | v);
+            high = -1;
+        }
+    }
+    return (high < 0 && count == expected_len) ? 0 : -1;
+}
+
+static int parse_hex_variable(const char* s, uint8_t* out, size_t* out_len, size_t max_len) {
+    size_t count = 0;
+    int high = -1;
+    for (; *s; ++s) {
+        if (*s == ' ' || *s == '\t') continue;
+        int v = hex_digit(*s);
+        if (v < 0) return -1;
+        if (high < 0) {
+            high = v;
+        } else {
+            if (count >= max_len) return -1;
+            out[count++] = (uint8_t)((high << 4) | v);
+            high = -1;
+        }
+    }
+    if (high >= 0) return -1;
+    *out_len = count;
+    return 0;
+}
+
+static void print_hex_buf(const char* label, const uint8_t* data, size_t len) {
+    printf("%s (%zu B): ", label, len);
+    for (size_t i = 0; i < len; ++i) printf("%02X", data[i]);
+    puts("");
+}
+
+static int run_aes2_session(const char* plaintext, size_t pt_len) {
+    char line[4096];
+    const char* default_info = "AES2|demo|info";
+
+    printf("\n[AES2] 키 길이 선택 [1]128 [2]192 [3]256 (기본=1): ");
+    size_t len = read_line_trim(line, sizeof(line));
+    int choice = (len == 0) ? 1 : atoi(line);
+
+    AESKeyLength key_len = AES128;
+    size_t key_bytes = 16;
+    switch (choice) {
+        case 2: key_len = AES192; key_bytes = 24; break;
+        case 3: key_len = AES256; key_bytes = 32; break;
+        default: key_len = AES128; key_bytes = 16; break;
+    }
+
+    uint8_t master_key[32] = {0};
+    printf("[AES2] 마스터 키 입력 (HEX, %zu바이트, 기본=0): ", key_bytes);
+    len = read_line_trim(line, sizeof(line));
+    if (len != 0) {
+        if (parse_hex_exact(line, master_key, key_bytes) != 0) {
+            puts("키 입력이 올바른 HEX가 아닙니다.");
+            return -1;
+        }
+    }
+
+    uint8_t salt[64];
+    size_t salt_len = 0;
+    printf("[AES2] salt 입력 (HEX, 공백=랜덤 16바이트): ");
+    len = read_line_trim(line, sizeof(line));
+    if (len == 0) {
+        salt_len = 16;
+        if (AES2_rand_bytes(salt, salt_len) != AES_OK) {
+            puts("salt 생성 실패");
+            return -1;
+        }
+    } else {
+        if (parse_hex_variable(line, salt, &salt_len, sizeof(salt)) != 0 || salt_len == 0) {
+            puts("salt 입력이 올바른 HEX가 아닙니다.");
+            return -1;
+        }
+    }
+    print_hex_buf("[AES2] salt", salt, salt_len);
+
+    char info[128];
+    printf("[AES2] info 문자열 (기본=\"%s\"): ", default_info);
+    len = read_line_trim(line, sizeof(line));
+    if (len == 0) {
+        strncpy(info, default_info, sizeof(info) - 1);
+        info[sizeof(info) - 1] = '\0';
+    } else {
+        strncpy(info, line, sizeof(info) - 1);
+        info[sizeof(info) - 1] = '\0';
+    }
+    size_t info_len = strlen(info);
+
+    printf("[AES2] 태그 길이 선택 [1]16 [2]32 (기본=2): ");
+    len = read_line_trim(line, sizeof(line));
+    choice = (len == 0) ? 2 : atoi(line);
+    AES2_TagLen tag_len = (choice == 1) ? AES2_TagLen_16 : AES2_TagLen_32;
+    size_t tag_bytes = (size_t)tag_len;
+
+    printf("[AES2] 운용모드 선택: [1] CTR  [2] CBC : ");
+    len = read_line_trim(line, sizeof(line));
+    int mode = (len == 0) ? 1 : atoi(line);
+
+    char aad[2048];
+    puts("[AES2] AAD 입력 (선택, 그대로 MAC에 포함):");
+    size_t aad_len = read_line_trim(aad, sizeof(aad));
+
+    AES2_KDFParams params = {
+        salt, salt_len,
+        (const uint8_t*)info, info_len
+    };
+    AES2_SecCtx sctx;
+    AESStatus rc = AES2_init_hardened(&sctx,
+                                      master_key, key_len,
+                                      &params,
+                                      AES2_F_MAC_ENABLE,
+                                      tag_len);
+    if (rc != AES_OK) {
+        printf("AES2_init_hardened 실패: %d\n", rc);
+        AES2_secure_zero(master_key, sizeof(master_key));
+        AES2_secure_zero(salt, sizeof(salt));
+        return -1;
+    }
+
+    int result = 0;
+    if (mode == 2) {
+        AESPadding padding = ask_padding();
+        uint8_t nonce[16];
+        uint8_t iv[16];
+        if (AES2_rand_bytes(nonce, sizeof(nonce)) != AES_OK ||
+            AES2_rand_bytes(iv, sizeof(iv)) != AES_OK) {
+            puts("nonce/iv 생성 실패");
+            result = -1;
+        } else {
+            size_t ct_cap = pt_len + 16;
+            uint8_t* ciphertext = (uint8_t*)malloc(ct_cap ? ct_cap : 1);
+            uint8_t iv_enc[16];
+            if (!ciphertext) {
+                puts("메모리 할당 실패");
+                result = -1;
+            } else {
+                memcpy(iv_enc, iv, sizeof(iv));
+                size_t ct_len = 0;
+                rc = AES_encryptCBC(&sctx.aes,
+                                    (const uint8_t*)plaintext, pt_len,
+                                    ciphertext, ct_cap, &ct_len,
+                                    iv_enc, padding);
+                if (rc != AES_OK) {
+                    printf("AES_encryptCBC 실패: %d\n", rc);
+                    result = -1;
+                } else {
+                    size_t mac_len = aad_len + sizeof(nonce) + sizeof(iv) + ct_len;
+                    uint8_t* mac_buf = (uint8_t*)malloc(mac_len ? mac_len : 1);
+                    uint8_t tag[64];
+                    if (!mac_buf) {
+                        puts("메모리 할당 실패");
+                        result = -1;
+                    } else {
+                        size_t pos = 0;
+                        if (aad_len) { memcpy(mac_buf + pos, aad, aad_len); pos += aad_len; }
+                        memcpy(mac_buf + pos, nonce, sizeof(nonce)); pos += sizeof(nonce);
+                        memcpy(mac_buf + pos, iv, sizeof(iv)); pos += sizeof(iv);
+                        memcpy(mac_buf + pos, ciphertext, ct_len); pos += ct_len;
+                        rc = AES2_HMAC_tag(sctx.mac_key, sizeof(sctx.mac_key),
+                                           mac_buf, pos,
+                                           tag_len,
+                                           tag, sizeof(tag));
+                        if (rc != AES_OK) {
+                            printf("태그 계산 실패: %d\n", rc);
+                            result = -1;
+                        } else {
+                            puts("\n[AES2-CBC] 암호화 결과");
+                            print_hex_buf("nonce", nonce, sizeof(nonce));
+                            print_hex_buf("iv", iv, sizeof(iv));
+                            print_hex_buf("ciphertext", ciphertext, ct_len);
+                            print_hex_buf("tag", tag, tag_bytes);
+
+                            uint8_t verify_tag[64];
+                            rc = AES2_HMAC_tag(sctx.mac_key, sizeof(sctx.mac_key),
+                                               mac_buf, pos,
+                                               tag_len,
+                                               verify_tag, sizeof(verify_tag));
+                            bool tag_ok = (rc == AES_OK) && (AES2_ct_memcmp(tag, verify_tag, tag_bytes) == 0);
+                            printf("태그 검증: %s\n", tag_ok ? "일치" : "불일치");
+
+                            if (tag_ok) {
+                                uint8_t* recovered = (uint8_t*)malloc(ct_len ? ct_len : 1);
+                                if (!recovered) {
+                                    puts("복호화 버퍼 할당 실패");
+                                } else {
+                                    uint8_t iv_dec[16];
+                                    memcpy(iv_dec, iv, sizeof(iv));
+                                    size_t rec_len = 0;
+                                    rc = AES_decryptCBC(&sctx.aes,
+                                                        ciphertext, ct_len,
+                                                        recovered, ct_len, &rec_len,
+                                                        iv_dec, padding);
+                                    if (rc == AES_OK) {
+                                        printf("복호화 평문: \"%.*s\"\n", (int)rec_len, recovered);
+                                    } else {
+                                        printf("복호화 실패: %d\n", rc);
+                                        result = -1;
+                                    }
+                                    AES2_secure_zero(recovered, ct_len);
+                                    free(recovered);
+                                }
+                            } else {
+                                puts("태그가 일치하지 않아 복호화를 건너뜁니다.");
+                            }
+                        }
+                        AES2_secure_zero(mac_buf, mac_len);
+                        free(mac_buf);
+                    }
+                }
+                AES2_secure_zero(ciphertext, ct_cap);
+                free(ciphertext);
+            }
+        }
+    } else {
+        uint8_t nonce[16];
+        if (AES2_rand_bytes(nonce, sizeof(nonce)) != AES_OK) {
+            puts("nonce 생성 실패");
+            result = -1;
+        } else {
+            uint8_t* ciphertext = (uint8_t*)malloc(pt_len ? pt_len : 1);
+            if (!ciphertext) {
+                puts("메모리 할당 실패");
+                result = -1;
+            } else {
+                uint8_t counter[16];
+                memcpy(counter, nonce, sizeof(nonce));
+                rc = AES_cryptCTR(&sctx.aes,
+                                  (const uint8_t*)plaintext, pt_len,
+                                  ciphertext,
+                                  counter);
+                if (rc != AES_OK) {
+                    printf("AES_cryptCTR 실패: %d\n", rc);
+                    result = -1;
+                } else {
+                    size_t mac_len = aad_len + sizeof(nonce) + pt_len;
+                    uint8_t* mac_buf = (uint8_t*)malloc(mac_len ? mac_len : 1);
+                    uint8_t tag[64];
+                    if (!mac_buf) {
+                        puts("메모리 할당 실패");
+                        result = -1;
+                    } else {
+                        size_t pos = 0;
+                        if (aad_len) { memcpy(mac_buf + pos, aad, aad_len); pos += aad_len; }
+                        memcpy(mac_buf + pos, nonce, sizeof(nonce)); pos += sizeof(nonce);
+                        memcpy(mac_buf + pos, ciphertext, pt_len); pos += pt_len;
+                        rc = AES2_HMAC_tag(sctx.mac_key, sizeof(sctx.mac_key),
+                                           mac_buf, pos,
+                                           tag_len,
+                                           tag, sizeof(tag));
+                        if (rc != AES_OK) {
+                            printf("태그 계산 실패: %d\n", rc);
+                            result = -1;
+                        } else {
+                            puts("\n[AES2-CTR] 암호화 결과");
+                            print_hex_buf("nonce", nonce, sizeof(nonce));
+                            print_hex_buf("ciphertext", ciphertext, pt_len);
+                            print_hex_buf("tag", tag, tag_bytes);
+
+                            uint8_t verify_tag[64];
+                            rc = AES2_HMAC_tag(sctx.mac_key, sizeof(sctx.mac_key),
+                                               mac_buf, pos,
+                                               tag_len,
+                                               verify_tag, sizeof(verify_tag));
+                            bool tag_ok = (rc == AES_OK) && (AES2_ct_memcmp(tag, verify_tag, tag_bytes) == 0);
+                            printf("태그 검증: %s\n", tag_ok ? "일치" : "불일치");
+
+                            if (tag_ok) {
+                                uint8_t* recovered = (uint8_t*)malloc(pt_len ? pt_len : 1);
+                                if (!recovered) {
+                                    puts("복호화 버퍼 할당 실패");
+                                } else {
+                                    memcpy(counter, nonce, sizeof(nonce));
+                                    rc = AES_cryptCTR(&sctx.aes,
+                                                      ciphertext, pt_len,
+                                                      recovered,
+                                                      counter);
+                                    if (rc == AES_OK) {
+                                        printf("복호화 평문: \"%.*s\"\n", (int)pt_len, recovered);
+                                    } else {
+                                        printf("복호화 실패: %d\n", rc);
+                                        result = -1;
+                                    }
+                                    AES2_secure_zero(recovered, pt_len);
+                                    free(recovered);
+                                }
+                            } else {
+                                puts("태그가 일치하지 않아 복호화를 건너뜁니다.");
+                            }
+                        }
+                        AES2_secure_zero(mac_buf, mac_len);
+                        free(mac_buf);
+                    }
+                }
+                AES2_secure_zero(ciphertext, pt_len);
+                free(ciphertext);
+            }
+        }
+    }
+
+    AES2_secure_zero(master_key, sizeof(master_key));
+    AES2_secure_zero(salt, sizeof(salt));
+    AES2_secure_zero(&sctx, sizeof(sctx));
+    return result;
 }
 
 /**
@@ -160,9 +496,12 @@ int main(void) {
         return 1; 
     }
     int ver = atoi(line);
-    if (ver==2) { 
-        printf("AES #2는 아직 개발중입니다!\n"); 
-        return 0; 
+    if (ver==2) {
+        if (run_aes2_session(msg, msg_len) != 0) {
+            printf("AES2 테스트 실패\n");
+            return 1;
+        }
+        return 0;
     }
     if (ver!=1) { 
         printf("잘못된 선택입니다.\n"); 
