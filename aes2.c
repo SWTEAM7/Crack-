@@ -69,7 +69,7 @@ static int aes2_valid_taglen(AES2_TagLen tag_len) {
     return (tag_len == AES2_TagLen_16) || (tag_len == AES2_TagLen_32);
 }
 
-/* ---------- 공개 API ---------- */
+/* ---------- 공개 API: init/KDF ---------- */
 AESStatus AES2_init_hardened(AES2_SecCtx* s,
                              const uint8_t* master_key, AESKeyLength keyLen,
                              const AES2_KDFParams* kdf,
@@ -124,6 +124,7 @@ cleanup:
     return st;
 }
 
+/* ---------- HMAC / 상수시간 비교 / 보안 삭제 / 난수 ---------- */
 AESStatus AES2_HMAC_tag(const uint8_t* mac_key, size_t mac_key_len,
                         const uint8_t* m, size_t m_len,
                         AES2_TagLen tag_len,
@@ -170,6 +171,7 @@ AESStatus AES2_rand_bytes(uint8_t* out, size_t n) {
 #endif
 }
 
+/* ---------- 라이브러리 정보 / selftest ---------- */
 const AES2_LibraryInfo* AES2_libinfo(void) {
     static const AES2_LibraryInfo info = {
         0x00010000,
@@ -236,3 +238,451 @@ AESStatus AES2_selftest(void) {
     return (ct_memcmp(out1, out2, sizeof(out1)) == 0) ? AES_OK : AES_ERR_STATE;
 }
 
+/* ---------- 내부 겹침/nonce/IV 헬퍼 ---------- */
+static int aes2_forbidden_overlap(const void* in, size_t in_len,
+                                  const void* out, size_t out_len)
+{
+    if (!in || !out || in_len == 0 || out_len == 0) return 0;
+    if (in == out) return 0; // 완전 in-place 허용
+
+    const uint8_t* a = (const uint8_t*)in;
+    const uint8_t* b = (const uint8_t*)out;
+
+    if (a + in_len <= b) return 0;
+    if (b + out_len <= a) return 0;
+
+    return 1; // 부분 겹침 → 금지
+}
+
+static AESStatus aes2_check_and_update_nonce(AES2_SecCtx* s,
+                                             const uint8_t nonce16[16])
+{
+    if (!s || !nonce16) return AES_ERR_BAD_PARAM;
+    if (s->flags & AES2_F_NONCE_GUARD) {
+        if (s->last_nonce_set &&
+            memcmp(s->last_nonce, nonce16, 16) == 0) {
+            return AES_ERR_STATE; // nonce 재사용
+        }
+    }
+    memcpy(s->last_nonce, nonce16, 16);
+    s->last_nonce_set = true;
+    return AES_OK;
+}
+
+static AESStatus aes2_check_and_update_iv(AES2_SecCtx* s,
+                                          const uint8_t iv16[16])
+{
+    if (!s || !iv16) return AES_ERR_BAD_PARAM;
+    if (s->flags & AES2_F_NONCE_GUARD) {
+        if (s->last_iv_set &&
+            memcmp(s->last_iv, iv16, 16) == 0) {
+            return AES_ERR_STATE; // IV 재사용
+        }
+    }
+    memcpy(s->last_iv, iv16, 16);
+    s->last_iv_set = true;
+    return AES_OK;
+}
+
+/* ---------- EtM: CTR ---------- */
+AESStatus AES2_seal_CTR(AES2_SecCtx* s,
+                        const uint8_t* aad, size_t aad_len,
+                        const uint8_t* nonce16,
+                        const uint8_t* pt, size_t pt_len,
+                        uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
+                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
+{
+    if (!s || !nonce16 || !ct || !ct_len_out)
+        return AES_ERR_BAD_PARAM;
+    if (aad_len && !aad)
+        return AES_ERR_BAD_PARAM;
+    if (pt_len && !pt)
+        return AES_ERR_BAD_PARAM;
+    if (ct_cap < pt_len)
+        return AES_ERR_BUF_SMALL;
+
+    if ((s->flags & AES2_F_MAC_ENABLE) && (!tag || !tag_len_out))
+        return AES_ERR_BAD_PARAM;
+
+    if (aes2_forbidden_overlap(pt, pt_len, ct, ct_cap))
+        return AES_ERR_OVERLAP;
+
+    AESStatus st = aes2_check_and_update_nonce(s, nonce16);
+    if (st != AES_OK) return st;
+
+    uint8_t ctr[16];
+    memcpy(ctr, nonce16, 16);
+    st = AES_cryptCTR(&s->aes,
+                      pt_len ? pt : (const uint8_t*)"", pt_len,
+                      ct,
+                      ctr);
+    AES2_secure_zero(ctr, sizeof(ctr));
+    if (st != AES_OK) return st;
+
+    *ct_len_out = pt_len;
+
+    if (!(s->flags & AES2_F_MAC_ENABLE)) {
+        if (tag_len_out) *tag_len_out = 0;
+        return AES_OK;
+    }
+
+    size_t mac_len = aad_len + 16 + pt_len;
+    uint8_t* mac_buf = NULL;
+
+    if (mac_len) {
+        mac_buf = (uint8_t*)malloc(mac_len);
+        if (!mac_buf) return AES_ERR_STATE;
+
+        size_t pos = 0;
+        if (aad_len) {
+            memcpy(mac_buf + pos, aad, aad_len);
+            pos += aad_len;
+        }
+        memcpy(mac_buf + pos, nonce16, 16);
+        pos += 16;
+        if (pt_len) {
+            memcpy(mac_buf + pos, ct, pt_len);
+            pos += pt_len;
+        }
+    }
+
+    st = AES2_HMAC_tag(s->mac_key, sizeof(s->mac_key),
+                       mac_buf, mac_len,
+                       (AES2_TagLen)s->tag_len,
+                       tag, tag_cap);
+
+    if (mac_buf) {
+        AES2_secure_zero(mac_buf, mac_len);
+        free(mac_buf);
+    }
+
+    if (st != AES_OK) return st;
+    if (tag_len_out) *tag_len_out = s->tag_len;
+    return AES_OK;
+}
+
+AESStatus AES2_open_CTR(AES2_SecCtx* s,
+                        const uint8_t* aad, size_t aad_len,
+                        const uint8_t* nonce16,
+                        const uint8_t* ct, size_t ct_len,
+                        const uint8_t* tag, size_t tag_len_in,
+                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
+{
+    if (!s || !nonce16 || !ct || !pt || !pt_len_out)
+        return AES_ERR_BAD_PARAM;
+    if (aad_len && !aad)
+        return AES_ERR_BAD_PARAM;
+    if (pt_cap < ct_len)
+        return AES_ERR_BUF_SMALL;
+
+    if (aes2_forbidden_overlap(ct, ct_len, pt, pt_cap))
+        return AES_ERR_OVERLAP;
+
+    /* 무결성 비사용 경로: 바로 복호화 */
+    if (!(s->flags & AES2_F_MAC_ENABLE)) {
+        uint8_t ctr[16];
+        memcpy(ctr, nonce16, 16);
+        AESStatus st = AES_cryptCTR(&s->aes, ct, ct_len, pt, ctr);
+        AES2_secure_zero(ctr, sizeof(ctr));
+        if (st != AES_OK) return st;
+        *pt_len_out = ct_len;
+        return AES_OK;
+    }
+
+    if (tag_len_in != (size_t)s->tag_len)
+        return AES_ERR_AUTH;
+    if (!tag)
+        return AES_ERR_BAD_PARAM;
+
+    size_t mac_len = aad_len + 16 + ct_len;
+    uint8_t* mac_buf = NULL;
+
+    if (mac_len) {
+        mac_buf = (uint8_t*)malloc(mac_len);
+        if (!mac_buf) return AES_ERR_STATE;
+
+        size_t pos = 0;
+        if (aad_len) {
+            memcpy(mac_buf + pos, aad, aad_len);
+            pos += aad_len;
+        }
+        memcpy(mac_buf + pos, nonce16, 16);
+        pos += 16;
+        if (ct_len) {
+            memcpy(mac_buf + pos, ct, ct_len);
+            pos += ct_len;
+        }
+    }
+
+    uint8_t calc_tag[HMAC_SHA512_LEN];
+    AESStatus st = AES2_HMAC_tag(s->mac_key, sizeof(s->mac_key),
+                                 mac_buf, mac_len,
+                                 (AES2_TagLen)s->tag_len,
+                                 calc_tag, sizeof(calc_tag));
+
+    if (mac_buf) {
+        AES2_secure_zero(mac_buf, mac_len);
+        free(mac_buf);
+    }
+    if (st != AES_OK) return st;
+
+    if (AES2_ct_memcmp(calc_tag, tag, tag_len_in) != 0) {
+        AES2_secure_zero(calc_tag, sizeof(calc_tag));
+        return AES_ERR_AUTH;
+    }
+    AES2_secure_zero(calc_tag, sizeof(calc_tag));
+
+    uint8_t ctr[16];
+    memcpy(ctr, nonce16, 16);
+    st = AES_cryptCTR(&s->aes, ct, ct_len, pt, ctr);
+    AES2_secure_zero(ctr, sizeof(ctr));
+    if (st != AES_OK) return st;
+
+    *pt_len_out = ct_len;
+    return AES_OK;
+}
+
+/* ---------- EtM: CBC ---------- */
+AESStatus AES2_seal_CBC(AES2_SecCtx* s,
+                        const uint8_t* aad, size_t aad_len,
+                        const uint8_t* nonce16,
+                        const uint8_t* iv16,
+                        const uint8_t* pt, size_t pt_len,
+                        uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
+                        AESPadding padding,
+                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
+{
+    if (!s || !nonce16 || !iv16 || !ct || !ct_len_out)
+        return AES_ERR_BAD_PARAM;
+    if (aad_len && !aad)
+        return AES_ERR_BAD_PARAM;
+    if (pt_len && !pt)
+        return AES_ERR_BAD_PARAM;
+
+    if (aes2_forbidden_overlap(pt, pt_len, ct, ct_cap))
+        return AES_ERR_OVERLAP;
+
+    AESStatus st = aes2_check_and_update_nonce(s, nonce16);
+    if (st != AES_OK) return st;
+    st = aes2_check_and_update_iv(s, iv16);
+    if (st != AES_OK) return st;
+
+    uint8_t iv_work[16];
+    memcpy(iv_work, iv16, 16);
+
+    st = AES_encryptCBC(&s->aes,
+                        pt_len ? pt : (const uint8_t*)"", pt_len,
+                        ct, ct_cap, ct_len_out,
+                        iv_work, padding);
+    AES2_secure_zero(iv_work, sizeof(iv_work));
+    if (st != AES_OK) return st;
+
+    if (!(s->flags & AES2_F_MAC_ENABLE)) {
+        if (tag_len_out) *tag_len_out = 0;
+        return AES_OK;
+    }
+
+    size_t ct_len = *ct_len_out;
+    size_t mac_len = aad_len + 16 + 16 + ct_len;
+    uint8_t* mac_buf = NULL;
+
+    if (mac_len) {
+        mac_buf = (uint8_t*)malloc(mac_len);
+        if (!mac_buf) return AES_ERR_STATE;
+
+        size_t pos = 0;
+        if (aad_len) {
+            memcpy(mac_buf + pos, aad, aad_len);
+            pos += aad_len;
+        }
+        memcpy(mac_buf + pos, nonce16, 16);
+        pos += 16;
+        memcpy(mac_buf + pos, iv16, 16);
+        pos += 16;
+        if (ct_len) {
+            memcpy(mac_buf + pos, ct, ct_len);
+            pos += ct_len;
+        }
+    }
+
+    st = AES2_HMAC_tag(s->mac_key, sizeof(s->mac_key),
+                       mac_buf, mac_len,
+                       (AES2_TagLen)s->tag_len,
+                       tag, tag_cap);
+
+    if (mac_buf) {
+        AES2_secure_zero(mac_buf, mac_len);
+        free(mac_buf);
+    }
+
+    if (st != AES_OK) return st;
+    if (tag_len_out) *tag_len_out = s->tag_len;
+    return AES_OK;
+}
+
+AESStatus AES2_open_CBC(AES2_SecCtx* s,
+                        const uint8_t* aad, size_t aad_len,
+                        const uint8_t* nonce16,
+                        const uint8_t* iv16,
+                        const uint8_t* ct, size_t ct_len,
+                        const uint8_t* tag, size_t tag_len_in,
+                        AESPadding padding,
+                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
+{
+    (void)nonce16; // 현재 구현에서는 MAC 입력에만 사용 → 이미 MAC 단계에서 사용함
+    if (!s || !nonce16 || !iv16 || !ct || !pt || !pt_len_out)
+        return AES_ERR_BAD_PARAM;
+    if (aad_len && !aad)
+        return AES_ERR_BAD_PARAM;
+    if (pt_cap < ct_len)
+        return AES_ERR_BUF_SMALL;
+
+    if (aes2_forbidden_overlap(ct, ct_len, pt, pt_cap))
+        return AES_ERR_OVERLAP;
+
+    if (!(s->flags & AES2_F_MAC_ENABLE)) {
+        uint8_t iv_work[16];
+        memcpy(iv_work, iv16, 16);
+        AESStatus st = AES_decryptCBC(&s->aes,
+                                      ct, ct_len,
+                                      pt, pt_cap, pt_len_out,
+                                      iv_work, padding);
+        AES2_secure_zero(iv_work, sizeof(iv_work));
+        return st;
+    }
+
+    if (tag_len_in != (size_t)s->tag_len)
+        return AES_ERR_AUTH;
+    if (!tag)
+        return AES_ERR_BAD_PARAM;
+
+    size_t mac_len = aad_len + 16 + 16 + ct_len;
+    uint8_t* mac_buf = NULL;
+
+    if (mac_len) {
+        mac_buf = (uint8_t*)malloc(mac_len);
+        if (!mac_buf) return AES_ERR_STATE;
+
+        size_t pos = 0;
+        if (aad_len) {
+            memcpy(mac_buf + pos, aad, aad_len);
+            pos += aad_len;
+        }
+        memcpy(mac_buf + pos, nonce16, 16);
+        pos += 16;
+        memcpy(mac_buf + pos, iv16, 16);
+        pos += 16;
+        if (ct_len) {
+            memcpy(mac_buf + pos, ct, ct_len);
+            pos += ct_len;
+        }
+    }
+
+    uint8_t calc_tag[HMAC_SHA512_LEN];
+    AESStatus st = AES2_HMAC_tag(s->mac_key, sizeof(s->mac_key),
+                                 mac_buf, mac_len,
+                                 (AES2_TagLen)s->tag_len,
+                                 calc_tag, sizeof(calc_tag));
+
+    if (mac_buf) {
+        AES2_secure_zero(mac_buf, mac_len);
+        free(mac_buf);
+    }
+    if (st != AES_OK) return st;
+
+    if (AES2_ct_memcmp(calc_tag, tag, tag_len_in) != 0) {
+        AES2_secure_zero(calc_tag, sizeof(calc_tag));
+        return AES_ERR_AUTH;
+    }
+    AES2_secure_zero(calc_tag, sizeof(calc_tag));
+
+    uint8_t iv_work[16];
+    memcpy(iv_work, iv16, 16);
+    st = AES_decryptCBC(&s->aes,
+                        ct, ct_len,
+                        pt, pt_cap, pt_len_out,
+                        iv_work, padding);
+    AES2_secure_zero(iv_work, sizeof(iv_work));
+    return st;
+}
+
+/* ---------- auto nonce/IV 래퍼 ---------- */
+AESStatus AES2_seal_CTR_autoIV(AES2_SecCtx* s,
+                               const uint8_t* aad, size_t aad_len,
+                               uint8_t out_nonce16[16],
+                               const uint8_t* pt, size_t pt_len,
+                               uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
+                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
+{
+    if (!out_nonce16) return AES_ERR_BAD_PARAM;
+
+    AESStatus st = AES2_rand_bytes(out_nonce16, 16);
+    if (st != AES_OK) return st;
+
+    return AES2_seal_CTR(s, aad, aad_len,
+                         out_nonce16,
+                         pt, pt_len,
+                         ct, ct_cap, ct_len_out,
+                         tag, tag_cap, tag_len_out);
+}
+
+AESStatus AES2_open_CTR_autoIV(AES2_SecCtx* s,
+                               const uint8_t* aad, size_t aad_len,
+                               const uint8_t in_nonce16[16],
+                               const uint8_t* ct, size_t ct_len,
+                               const uint8_t* tag, size_t tag_len_in,
+                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
+{
+    if (!in_nonce16) return AES_ERR_BAD_PARAM;
+
+    return AES2_open_CTR(s, aad, aad_len,
+                         in_nonce16,
+                         ct, ct_len,
+                         tag, tag_len_in,
+                         pt, pt_cap, pt_len_out);
+}
+
+AESStatus AES2_seal_CBC_autoIV(AES2_SecCtx* s,
+                               const uint8_t* aad, size_t aad_len,
+                               uint8_t out_nonce16[16],
+                               uint8_t out_iv16[16],
+                               const uint8_t* pt, size_t pt_len,
+                               uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
+                               AESPadding padding,
+                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
+{
+    if (!out_nonce16 || !out_iv16) return AES_ERR_BAD_PARAM;
+
+    AESStatus st = AES2_rand_bytes(out_nonce16, 16);
+    if (st != AES_OK) return st;
+    st = AES2_rand_bytes(out_iv16, 16);
+    if (st != AES_OK) return st;
+
+    return AES2_seal_CBC(s, aad, aad_len,
+                         out_nonce16,
+                         out_iv16,
+                         pt, pt_len,
+                         ct, ct_cap, ct_len_out,
+                         padding,
+                         tag, tag_cap, tag_len_out);
+}
+
+AESStatus AES2_open_CBC_autoIV(AES2_SecCtx* s,
+                               const uint8_t* aad, size_t aad_len,
+                               const uint8_t in_nonce16[16],
+                               const uint8_t in_iv16[16],
+                               const uint8_t* ct, size_t ct_len,
+                               const uint8_t* tag, size_t tag_len_in,
+                               AESPadding padding,
+                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
+{
+    if (!in_nonce16 || !in_iv16) return AES_ERR_BAD_PARAM;
+
+    return AES2_open_CBC(s, aad, aad_len,
+                         in_nonce16,
+                         in_iv16,
+                         ct, ct_len,
+                         tag, tag_len_in,
+                         padding,
+                         pt, pt_cap, pt_len_out);
+}
