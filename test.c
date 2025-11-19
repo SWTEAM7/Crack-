@@ -19,6 +19,11 @@
 #include "aes2.h"
 #include "sha512.h"
 
+#ifdef _WIN32
+    #include <windows.h>
+    #include <locale.h>
+#endif
+
 /* ---------- 공통 헬퍼 ---------- */
 
 static void print_hex(const char* label, const uint8_t* buf, size_t len) {
@@ -316,6 +321,12 @@ static double benchmark_aes2_ctr(size_t msg_len, size_t iters) {
 /* ---------- 메인: 자가진단 + 기능 + 성능 ---------- */
 
 int main(void) {
+#ifdef _WIN32
+    // 콘솔과 C 런타임을 UTF-8로 맞추기
+    SetConsoleOutputCP(CP_UTF8);  // 출력
+    SetConsoleCP(CP_UTF8);        // 입력
+    setlocale(LC_ALL, ".UTF-8");
+#endif
     printf("============================================================\n");
     printf("  AES1 (속도형) vs AES2 (보안형, CTR+HMAC-SHA-512) 테스트\n");
     printf("============================================================\n\n");
