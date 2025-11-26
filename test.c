@@ -31,6 +31,45 @@
 
 #define BENCH_SIZE (10u * 1024u * 1024u) /* 10 MiB */
 
+/* --------------------------------------------------------------------------
+ * Windows UTF-8 콘솔 입력 헬퍼 함수
+ * fgets()는 Windows에서 UTF-8 한글을 제대로 못 읽으므로,
+ * ReadConsoleW로 UTF-16을 읽고 UTF-8로 변환합니다.
+ * -------------------------------------------------------------------------- */
+#ifdef _WIN32
+static int read_utf8_line(char* buf, size_t buf_size) {
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    if (hIn == INVALID_HANDLE_VALUE) return 0;
+
+    // UTF-16 버퍼 (wchar_t)
+    wchar_t wbuf[2048];
+    DWORD wchars_read = 0;
+
+    // ReadConsoleW로 UTF-16 문자열 읽기
+    if (!ReadConsoleW(hIn, wbuf, (DWORD)(sizeof(wbuf)/sizeof(wchar_t) - 1), &wchars_read, NULL)) {
+        return 0;
+    }
+    wbuf[wchars_read] = L'\0';
+
+    // 줄바꿈 제거
+    if (wchars_read > 0 && wbuf[wchars_read - 1] == L'\n') {
+        wbuf[--wchars_read] = L'\0';
+    }
+    if (wchars_read > 0 && wbuf[wchars_read - 1] == L'\r') {
+        wbuf[--wchars_read] = L'\0';
+    }
+
+    // UTF-16 → UTF-8 변환
+    int utf8_len = WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, (int)buf_size, NULL, NULL);
+    if (utf8_len <= 0) {
+        buf[0] = '\0';
+        return 0;
+    }
+
+    return (int)strlen(buf);
+}
+#endif
+
 static void print_hex(const char* label, const uint8_t* buf, size_t len) {
     printf("%s (%zu bytes): ", label, len);
     for (size_t i = 0; i < len; i++) {
@@ -337,16 +376,26 @@ int main(void) {
 
     /* 1) 평문 입력 */
     char line[2048];
+    size_t len = 0;
     printf("평문을 입력하세요 (최대 2047바이트):\n> ");
+    fflush(stdout);  // 프롬프트 즉시 출력
+
+#ifdef _WIN32
+    // Windows: ReadConsoleW로 UTF-8 한글 입력 지원
+    len = (size_t)read_utf8_line(line, sizeof(line));
+#else
+    // Linux/Mac: fgets 사용
     if (!fgets(line, sizeof(line), stdin)) {
         printf("입력을 읽지 못했습니다.\n");
         return 1;
     }
-    size_t len = strlen(line);
+    len = strlen(line);
     if (len > 0 && line[len - 1] == '\n') {
         line[len - 1] = '\0';
         len--;
     }
+#endif
+
     if (len == 0) {
         printf("빈 평문입니다. 종료합니다.\n");
         return 0;
@@ -357,12 +406,17 @@ int main(void) {
     printf("  [1] AES1 속도형 (CTR, 무결성 없음)\n");
     printf("  [2] AES2 보안형 (CTR + HKDF + HMAC-SHA-512)\n");
     printf("선택: ");
+    fflush(stdout);
 
     char choice_buf[16];
+#ifdef _WIN32
+    read_utf8_line(choice_buf, sizeof(choice_buf));
+#else
     if (!fgets(choice_buf, sizeof(choice_buf), stdin)) {
         printf("입력을 읽지 못했습니다.\n");
         return 1;
     }
+#endif
     int choice = atoi(choice_buf);
 
     if (choice == 1) {
