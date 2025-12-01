@@ -4,7 +4,7 @@
  * @details FIPS-197 표준을 따르는 AES-128/192/256 구현
  *          ECB, CBC, CTR 운용 모드 지원
  * @author AES 구현팀
- * @date 2024
+ * @date 2025
  */
 
  #pragma execution_character_set("utf-8")
