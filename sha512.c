@@ -121,7 +121,7 @@ static const uint64_t K[80] = {
  * @param state  8개의 64비트 워드로 구성된 해시 상태 (입력/출력)
  * @param block  128바이트 입력 블록
  */
-static void sha512_compress(uint64_t state[8], const uint8_t block[128]){
+static void sha512_compress(uint64_t state[8], const uint8_t block[128]){ /* SHA-512 단일 블록 압축 함수 */
     uint64_t w[80];  /* 메시지 스케줄 (80개 워드) */
     
     /* 입력을 16개의 64비트 big-endian 워드로 적재 */
@@ -185,7 +185,7 @@ static void sha512_compress(uint64_t state[8], const uint8_t block[128]){
  * @param c    SHA-512 컨텍스트
  * @param add  추가할 바이트 수
  */
-static void add_length(SHA512_CTX* c, uint64_t add){
+static void add_length(SHA512_CTX* c, uint64_t add){ /* 총 처리 길이를 128비트 카운터에 더함 */
     uint64_t lo = c->tot_len_lo + add;
     /* 오버플로우(캐리) 발생 시 상위 64비트 증가 */
     c->tot_len_hi += (lo < c->tot_len_lo);
@@ -201,7 +201,7 @@ static void add_length(SHA512_CTX* c, uint64_t add){
  * 
  * @param c  초기화할 SHA-512 컨텍스트 포인터
  */
-void sha512_init(SHA512_CTX* c){
+void sha512_init(SHA512_CTX* c){ /* SHA-512 해시 컨텍스트 초기화 */
     /* 초기화 벡터(FIPS 180-4 표준) */
     /* 각 값은 처음 8개 소수의 제곱근 분수부에서 추출 */
     static const uint64_t iv[8] = {
@@ -228,7 +228,7 @@ void sha512_init(SHA512_CTX* c){
  * @param data  해시에 포함할 데이터
  * @param len   데이터 길이 (바이트)
  */
-void sha512_update(SHA512_CTX* c, const void* data, size_t len){
+void sha512_update(SHA512_CTX* c, const void* data, size_t len){ /* SHA-512 해시에 데이터 추가 */
     const uint8_t* p = (const uint8_t*)data;
     if (!len) return;
 
@@ -277,7 +277,7 @@ void sha512_update(SHA512_CTX* c, const void* data, size_t len){
  * @param c    SHA-512 컨텍스트 포인터
  * @param out  해시 결과 출력 버퍼 (64바이트)
  */
-void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]){
+void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]){ /* SHA-512 해시 계산 완료 및 결과 출력 */
     /* 지금까지 처리된 총 길이에 현재 버퍼 길이 더하기 */
     add_length(c, (uint64_t)c->buf_len);
 
@@ -338,7 +338,7 @@ void sha512_final(SHA512_CTX* c, uint8_t out[SHA512_DIGEST_LEN]){
  * @param len   데이터 길이 (바이트)
  * @param out   해시 결과 출력 버퍼 (64바이트)
  */
-void sha512(const void* data, size_t len, uint8_t out[SHA512_DIGEST_LEN]){
+void sha512(const void* data, size_t len, uint8_t out[SHA512_DIGEST_LEN]){ /* 단일 호출로 SHA-512 해시 계산 */
     SHA512_CTX c; 
     sha512_init(&c); 
     sha512_update(&c, data, len); 
@@ -371,7 +371,7 @@ void sha512(const void* data, size_t len, uint8_t out[SHA512_DIGEST_LEN]){
  */
 void hmac_sha512(const uint8_t* key, size_t key_len,
                  const uint8_t* msg, size_t msg_len,
-                 uint8_t out[HMAC_SHA512_LEN]){
+                 uint8_t out[HMAC_SHA512_LEN]){ /* HMAC-SHA-512 메시지 인증 코드 계산 */
     uint8_t kopad[SHA512_BLOCK_LEN]; /* K' ⊕ opad (0x5c) */
     uint8_t kipad[SHA512_BLOCK_LEN]; /* K' ⊕ ipad (0x36) */
     uint8_t khash[SHA512_DIGEST_LEN];/* 키 축약용 임시 버퍼 */
@@ -434,7 +434,7 @@ void hmac_sha512(const uint8_t* key, size_t key_len,
  * @param ikm_len   IKM 길이 (바이트)
  * @param prk       출력 PRK 버퍼 (64바이트)
  */
-void hkdf_sha512_extract(const uint8_t* salt, size_t salt_len, const uint8_t* ikm, size_t ikm_len, uint8_t prk[HKDF_SHA512_PRK_LEN])
+void hkdf_sha512_extract(const uint8_t* salt, size_t salt_len, const uint8_t* ikm, size_t ikm_len, uint8_t prk[HKDF_SHA512_PRK_LEN]) /* HKDF Extract 단계 수행 */
 {
     /* RFC 5869: salt가 없으면 HashLen (64바이트) 길이의 0을 사용 */
     static const uint8_t zeros[SHA512_DIGEST_LEN] = {0};
@@ -476,7 +476,7 @@ void hkdf_sha512_extract(const uint8_t* salt, size_t salt_len, const uint8_t* ik
  */
 int hkdf_sha512_expand(const uint8_t* prk,
                        const uint8_t* info, size_t info_len,
-                       uint8_t* okm, size_t okm_len){
+                       uint8_t* okm, size_t okm_len){ /* HKDF Expand 단계 수행 */
     if (okm_len == 0) return HKDF_SHA512_OK;
     if (okm_len > 255u*SHA512_DIGEST_LEN) return HKDF_SHA512_ERR; /* RFC 제한 */
 
@@ -552,7 +552,7 @@ int hkdf_sha512_expand(const uint8_t* prk,
 int hkdf_sha512(const uint8_t* salt, size_t salt_len,
                 const uint8_t* ikm,  size_t ikm_len,
                 const uint8_t* info, size_t info_len,
-                uint8_t* okm, size_t okm_len){
+                uint8_t* okm, size_t okm_len){ /* HKDF 전체 과정 수행 (Extract + Expand) */
     uint8_t prk[HKDF_SHA512_PRK_LEN];
     hkdf_sha512_extract(salt, salt_len, ikm, ikm_len, prk);
     int rc = hkdf_sha512_expand(prk, info, info_len, okm, okm_len);
@@ -578,7 +578,7 @@ int hkdf_sha512(const uint8_t* salt, size_t salt_len,
  * @param p  제로화할 메모리 영역의 시작 주소
  * @param n  제로화할 바이트 수
  */
-void secure_zero(void* p, size_t n){
+void secure_zero(void* p, size_t n){ /* 메모리 영역을 안전하게 제로화 */
 #ifdef _WIN32
     SecureZeroMemory(p, n);  /* Windows API 사용 */
 #elif defined(__STDC_LIB_EXT1__)
@@ -607,7 +607,7 @@ void secure_zero(void* p, size_t n){
  * 
  * @return 0 두 영역이 동일, 0이 아니면 다름
  */
-int ct_memcmp(const void* a, const void* b, size_t n){
+int ct_memcmp(const void* a, const void* b, size_t n){ /* 상수시간 메모리 비교 */
     const uint8_t* x=(const uint8_t*)a; 
     const uint8_t* y=(const uint8_t*)b; 
     uint8_t r=0;
@@ -625,7 +625,7 @@ int ct_memcmp(const void* a, const void* b, size_t n){
  * @param c  16진수 문자 ('0'-'9', 'a'-'f', 'A'-'F')
  * @return 0-15 숫자, 유효하지 않은 문자면 -1
  */
-static int hex_nibble(char c){
+static int hex_nibble(char c){ /* 16진수 문자를 숫자로 변환 */
     if (c>='0'&&c<='9') return c-'0';
     if (c>='a'&&c<='f') return c-'a'+10;
     if (c>='A'&&c<='F') return c-'A'+10;
@@ -641,7 +641,7 @@ static int hex_nibble(char c){
  * @param hex  16진수 문자열 (2글자 = 1바이트)
  * @return 0 일치, -1 불일치 또는 형식 오류
  */
-static int check_hex(const uint8_t* got, const char* hex){
+static int check_hex(const uint8_t* got, const char* hex){ /* 바이너리 데이터와 16진수 문자열 비교 */
     /* got(바이너리)와 hex(문자열)를 비교. hex는 연속된 2글자=1바이트 */
     for (size_t i=0; hex[2*i] && hex[2*i+1]; ++i){
         int hi = hex_nibble(hex[2*i]);
@@ -666,7 +666,7 @@ static int check_hex(const uint8_t* got, const char* hex){
  * 
  * @return 0 모든 테스트 통과, 음수 테스트 실패 (반환값으로 실패한 테스트 식별)
  */
-int sha512_selftest(void){
+int sha512_selftest(void){ /* SHA-512 구현 자가진단 테스트 */
     /* SHA-512("") 공백 문자열 테스트(FIPS 180-4 표준) */
     static const char* empty_full =
       "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce"

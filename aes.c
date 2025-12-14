@@ -672,11 +672,24 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
      size_t plen=0; AESStatus st = AES_applyPadding(in,in_len,out,out_cap,padding,&plen);
      if (st!=AES_OK){ aes_set_error(ctx, st, "padding fail"); return st; }
  
-     for (size_t i=0;i<plen;i+=AES_BLOCK) AES_encryptBlock(ctx, out+i, out+i);
-     *out_len = plen; return AES_OK;
- }
- 
- AESStatus AES_decryptECB(AES_ctx* ctx,
+    for (size_t i=0;i<plen;i+=AES_BLOCK) AES_encryptBlock(ctx, out+i, out+i);
+    *out_len = plen; return AES_OK;
+}
+
+/**
+ * @brief ECB 모드 복호화
+ * @param ctx AES 컨텍스트 포인터
+ * @param in 입력 암호문 포인터
+ * @param in_len 입력 암호문 길이 (바이트, 16의 배수)
+ * @param out 출력 버퍼 포인터
+ * @param out_cap 출력 버퍼 용량 (바이트)
+ * @param out_len 출력 평문 길이 (바이트)
+ * @param padding 패딩 방식
+ * @return AES_OK 성공, 그 외 에러 코드
+ * @details 각 블록을 독립적으로 복호화한 후 패딩을 제거합니다.
+ *          ECB 모드는 실무에서 사용하지 않기를 권장합니다.
+ */
+AESStatus AES_decryptECB(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
                           AESPadding padding){
@@ -731,11 +744,28 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
          AES_encryptBlock(ctx, out+i, out+i);
          memcpy(prev, out+i, 16);
      }
-     memcpy(iv, prev, 16); // iv 업데이트: 마지막 CT
-     *out_len = plen; return AES_OK;
- }
- 
- AESStatus AES_decryptCBC(AES_ctx* ctx,
+    memcpy(iv, prev, 16); // iv 업데이트: 마지막 CT
+    *out_len = plen; return AES_OK;
+}
+
+/**
+ * @brief CBC 모드 복호화
+ * @param ctx AES 컨텍스트 포인터
+ * @param in 입력 암호문 포인터
+ * @param in_len 입력 암호문 길이 (바이트, 16의 배수)
+ * @param out 출력 버퍼 포인터
+ * @param out_cap 출력 버퍼 용량 (바이트)
+ * @param out_len 출력 평문 길이 (바이트)
+ * @param iv 초기화 벡터 (16바이트, 입력/출력: 복호화 후 입력 마지막 암호문 블록으로 업데이트됨)
+ * @param padding 패딩 방식
+ * @return AES_OK 성공, 그 외 에러 코드
+ * @details 
+ * - 각 블록을 복호화한 후 이전 블록의 암호문과 XOR하여 평문 복원
+ * - 첫 번째 블록은 IV와 XOR
+ * - 패딩 제거 후 실제 평문 길이 반환
+ * - 주의: IV는 암호화 시와 동일한 값을 사용해야 함
+ */
+AESStatus AES_decryptCBC(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
                           uint8_t iv[16], AESPadding padding){
