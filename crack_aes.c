@@ -45,7 +45,7 @@
  * @param p  제로화할 메모리 영역의 시작 주소
  * @param n  제로화할 바이트 수
  */
-static void crack_aes_burn(void* p, size_t n) {
+static void crack_aes_burn(void* p, size_t n) { /* 메모리 영역을 안전하게 제로화 */
     if (!p || !n) return;
     secure_zero(p, n);
 }
@@ -73,7 +73,7 @@ static void crack_aes_burn(void* p, size_t n) {
 static AESStatus crack_aes_expand_label(const uint8_t* prk,
                                    const CRACK_AES_KDFParams* kdf,
                                    const char* label,
-                                   uint8_t* out, size_t out_len) {
+                                   uint8_t* out, size_t out_len) { /* HKDF-SHA-512를 사용하여 레이블 기반 키 확장 */
     static const char prefix[] = "CRACK_AES|";      /* 도메인 분리 접두사 */
     static const char suffix[] = "|v1|STRONG";  /* 버전 및 강도 표시 */
     uint8_t info_buf[SHA512_BLOCK_LEN + 256];  /* 정보 문자열 버퍼 */
@@ -117,7 +117,7 @@ static AESStatus crack_aes_expand_label(const uint8_t* prk,
  * @param keyLen  검사할 키 길이 (AES128, AES192, AES256)
  * @return 1 유효함, 0 유효하지 않음
  */
-static int crack_aes_valid_keylen(AESKeyLength keyLen) {
+static int crack_aes_valid_keylen(AESKeyLength keyLen) { /* AES 키 길이 유효성 검사 */
     return (keyLen == AES128) || (keyLen == AES192) || (keyLen == AES256);
 }
 
@@ -127,7 +127,7 @@ static int crack_aes_valid_keylen(AESKeyLength keyLen) {
  * @param tag_len  검사할 태그 길이 (CRACK_AES_TagLen_16 또는 CRACK_AES_TagLen_32)
  * @return 1 유효함, 0 유효하지 않음
  */
-static int crack_aes_valid_taglen(CRACK_AES_TagLen tag_len) {
+static int crack_aes_valid_taglen(CRACK_AES_TagLen tag_len) { /* MAC 태그 길이 유효성 검사 */
     return (tag_len == CRACK_AES_TagLen_16) || (tag_len == CRACK_AES_TagLen_32);
 }
 
@@ -159,7 +159,7 @@ AESStatus CRACK_AES_init_hardened(CRACK_AES_SecCtx* s,
                              const uint8_t* master_key, AESKeyLength keyLen,
                              const CRACK_AES_KDFParams* kdf,
                              CRACK_AES_Flags flags,
-                             CRACK_AES_TagLen mac_tag_len) {
+                             CRACK_AES_TagLen mac_tag_len) { /* CRACK_AES 보안 컨텍스트 초기화 */
     /* 매개변수 유효성 검사 */
     if (!s || !master_key || !crack_aes_valid_keylen(keyLen) || !crack_aes_valid_taglen(mac_tag_len)) {
         return AES_ERR_BAD_PARAM;
@@ -244,7 +244,7 @@ cleanup:
 AESStatus CRACK_AES_HMAC_tag(const uint8_t* mac_key, size_t mac_key_len,
                         const uint8_t* m, size_t m_len,
                         CRACK_AES_TagLen tag_len,
-                        uint8_t* out_tag, size_t out_tag_cap) {
+                        uint8_t* out_tag, size_t out_tag_cap) { /* HMAC-SHA-512 태그 생성 */
     if (!mac_key || !m || !out_tag || !crack_aes_valid_taglen(tag_len)) return AES_ERR_BAD_PARAM;
     if (out_tag_cap < (size_t)tag_len) return AES_ERR_BUF_SMALL;
 
@@ -271,7 +271,7 @@ AESStatus CRACK_AES_HMAC_tag(const uint8_t* mac_key, size_t mac_key_len,
  * @param n  비교할 바이트 수
  * @return 0 두 영역이 동일, 0이 아니면 다름
  */
-int CRACK_AES_ct_memcmp(const void* a, const void* b, size_t n) {
+int CRACK_AES_ct_memcmp(const void* a, const void* b, size_t n) { /* 상수시간 메모리 비교 */
     return ct_memcmp(a, b, n);
 }
 
@@ -284,7 +284,7 @@ int CRACK_AES_ct_memcmp(const void* a, const void* b, size_t n) {
  * @param p  제로화할 메모리 영역의 시작 주소
  * @param n  제로화할 바이트 수
  */
-void CRACK_AES_secure_zero(void* p, size_t n) {
+void CRACK_AES_secure_zero(void* p, size_t n) { /* 메모리 영역을 안전하게 제로화 */
     crack_aes_burn(p, n);
 }
 
@@ -304,7 +304,7 @@ void CRACK_AES_secure_zero(void* p, size_t n) {
  * 
  * @return AES_OK 성공, AES_ERR_BAD_PARAM 잘못된 매개변수, AES_ERR_STATE 난수 생성 실패
  */
-AESStatus CRACK_AES_rand_bytes(uint8_t* out, size_t n) {
+AESStatus CRACK_AES_rand_bytes(uint8_t* out, size_t n) { /* 암호학적으로 안전한 난수 생성 */
     if (!out && n) return AES_ERR_BAD_PARAM;
     if (n == 0) return AES_OK;
 
@@ -361,7 +361,7 @@ const CRACK_AES_LibraryInfo* CRACK_AES_libinfo(void) {
  * 
  * @return AES_OK 모든 테스트 통과, AES_ERR_STATE 테스트 실패
  */
-AESStatus CRACK_AES_selftest(void) {
+AESStatus CRACK_AES_selftest(void) { /* CRACK_AES 구현 자가진단 테스트 */
     /* SHA-512 기본 기능 검증 */
     if (sha512_selftest() != 0) return AES_ERR_STATE;
 
@@ -447,8 +447,7 @@ AESStatus CRACK_AES_selftest(void) {
  * @return 1 부분 겹침 감지 (금지됨), 0 겹침 없음 (허용됨)
  */
 static int crack_aes_forbidden_overlap(const void* in, size_t in_len,
-                                  const void* out, size_t out_len)
-{
+                                  const void* out, size_t out_len) { /* 버퍼 부분 겹침 검사 */
     if (!in || !out || in_len == 0 || out_len == 0) return 0;
     if (in == out) return 0; /* 완전 in-place 허용 */
 
@@ -475,8 +474,7 @@ static int crack_aes_forbidden_overlap(const void* in, size_t in_len,
  * @return AES_OK 성공, AES_ERR_BAD_PARAM 잘못된 매개변수, AES_ERR_STATE nonce 재사용 감지
  */
 static AESStatus crack_aes_check_and_update_nonce(CRACK_AES_SecCtx* s,
-                                             const uint8_t nonce16[16])
-{
+                                             const uint8_t nonce16[16]) { /* Nonce 재사용 검사 및 업데이트 */
     if (!s || !nonce16) return AES_ERR_BAD_PARAM;
     
     /* NONCE_GUARD 플래그가 설정된 경우 재사용 검사 */
@@ -505,8 +503,7 @@ static AESStatus crack_aes_check_and_update_nonce(CRACK_AES_SecCtx* s,
  * @return AES_OK 성공, AES_ERR_BAD_PARAM 잘못된 매개변수, AES_ERR_STATE IV 재사용 감지
  */
 static AESStatus crack_aes_check_and_update_iv(CRACK_AES_SecCtx* s,
-                                          const uint8_t iv16[16])
-{
+                                             const uint8_t iv16[16]) { /* IV 재사용 검사 및 업데이트 */
     if (!s || !iv16) return AES_ERR_BAD_PARAM;
     
     /* NONCE_GUARD 플래그가 설정된 경우 재사용 검사 */
@@ -557,8 +554,7 @@ AESStatus CRACK_AES_seal_CTR(CRACK_AES_SecCtx* s,
                         const uint8_t* nonce16,
                         const uint8_t* pt, size_t pt_len,
                         uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
-                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
-{
+                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out) { /* CRACK_AES CTR 모드 암호화 */
     /* 매개변수 유효성 검사 */
     if (!s || !nonce16 || !ct || !ct_len_out)
         return AES_ERR_BAD_PARAM;
@@ -668,8 +664,7 @@ AESStatus CRACK_AES_open_CTR(CRACK_AES_SecCtx* s,
                         const uint8_t* nonce16,
                         const uint8_t* ct, size_t ct_len,
                         const uint8_t* tag, size_t tag_len_in,
-                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
-{
+                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out) { /* CRACK_AES CTR 모드 복호화 */
     /* 매개변수 유효성 검사 */
     if (!s || !nonce16 || !ct || !pt || !pt_len_out)
         return AES_ERR_BAD_PARAM;
@@ -791,8 +786,7 @@ AESStatus CRACK_AES_seal_CBC(CRACK_AES_SecCtx* s,
                         const uint8_t* pt, size_t pt_len,
                         uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
                         AESPadding padding,
-                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
-{
+                        uint8_t* tag, size_t tag_cap, size_t* tag_len_out) { /* CRACK_AES CBC 모드 암호화 */
     /* 매개변수 유효성 검사 */
     if (!s || !nonce16 || !iv16 || !ct || !ct_len_out)
         return AES_ERR_BAD_PARAM;
@@ -904,8 +898,7 @@ AESStatus CRACK_AES_open_CBC(CRACK_AES_SecCtx* s,
                         const uint8_t* ct, size_t ct_len,
                         const uint8_t* tag, size_t tag_len_in,
                         AESPadding padding,
-                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
-{
+                        uint8_t* pt, size_t pt_cap, size_t* pt_len_out) { /* CRACK_AES CBC 모드 복호화 */
     (void)nonce16; /* 현재 구현에서는 MAC 입력에만 사용 → 이미 MAC 단계에서 사용함 */
     /* 매개변수 유효성 검사 */
     if (!s || !nonce16 || !iv16 || !ct || !pt || !pt_len_out)
@@ -1023,8 +1016,7 @@ AESStatus CRACK_AES_seal_CTR_autoIV(CRACK_AES_SecCtx* s,
                                uint8_t out_nonce16[16],
                                const uint8_t* pt, size_t pt_len,
                                uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
-                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
-{
+                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out) { /* CRACK_AES CTR 모드 암호화 (nonce 자동 생성) */
     if (!out_nonce16) return AES_ERR_BAD_PARAM;
 
     /* 암호학적으로 안전한 난수로 nonce 생성 */
@@ -1064,8 +1056,7 @@ AESStatus CRACK_AES_open_CTR_autoIV(CRACK_AES_SecCtx* s,
                                const uint8_t in_nonce16[16],
                                const uint8_t* ct, size_t ct_len,
                                const uint8_t* tag, size_t tag_len_in,
-                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
-{
+                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out) { /* CRACK_AES CTR 모드 복호화 (nonce 자동 검증) */
     if (!in_nonce16) return AES_ERR_BAD_PARAM;
 
     return CRACK_AES_open_CTR(s, aad, aad_len,
@@ -1106,8 +1097,7 @@ AESStatus CRACK_AES_seal_CBC_autoIV(CRACK_AES_SecCtx* s,
                                const uint8_t* pt, size_t pt_len,
                                uint8_t* ct, size_t ct_cap, size_t* ct_len_out,
                                AESPadding padding,
-                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out)
-{
+                               uint8_t* tag, size_t tag_cap, size_t* tag_len_out) { /* CRACK_AES CBC 모드 암호화 (nonce/IV 자동 생성) */
     if (!out_nonce16 || !out_iv16) return AES_ERR_BAD_PARAM;
 
     /* 암호학적으로 안전한 난수로 nonce 생성 */
@@ -1156,8 +1146,7 @@ AESStatus CRACK_AES_open_CBC_autoIV(CRACK_AES_SecCtx* s,
                                const uint8_t* ct, size_t ct_len,
                                const uint8_t* tag, size_t tag_len_in,
                                AESPadding padding,
-                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out)
-{
+                               uint8_t* pt, size_t pt_cap, size_t* pt_len_out) { /* CRACK_AES CBC 모드 복호화 (nonce/IV 자동 검증) */
     if (!in_nonce16 || !in_iv16) return AES_ERR_BAD_PARAM;
 
     return CRACK_AES_open_CBC(s, aad, aad_len,

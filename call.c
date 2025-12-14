@@ -6,7 +6,7 @@
  *   - [2] 소켓 통신 (서버/클라이언트) - 암호화된 메시지 송수신
  *
  * 빌드 (Windows):
- *   cl /utf-8 /std:c17 /O2 /W4 /D_CRT_SECURE_NO_WARNINGS test.c aes.c crack_aes.c sha512.c ws2_32.lib
+ *   cl /utf-8 /std:c17 /O2 /W4 /D_CRT_SECURE_NO_WARNINGS call.c aes.c crack_aes.c sha512.c ws2_32.lib advapi32.lib
  * ------------------------------------------------------------------------- */
 
 #include <stdio.h>
@@ -89,7 +89,7 @@ static const uint8_t g_comm_key[32] = {
 };
 
 /* 랜덤 바이트 생성 (Windows) */
-static void generate_random_bytes(uint8_t* buf, size_t len) {
+static void generate_random_bytes(uint8_t* buf, size_t len) { /* 랜덤 바이트 생성 */
 #ifdef _WIN32
     HCRYPTPROV hProv;
     if (CryptAcquireContextW(&hProv, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT)) {
@@ -112,7 +112,7 @@ static void generate_random_bytes(uint8_t* buf, size_t len) {
 }
 
 /* 전방 선언 */
-static int recv_encrypted_message(SOCKET sock, char* plaintext, size_t max_len, size_t* out_len);
+static int recv_encrypted_message(SOCKET sock, char* plaintext, size_t max_len, size_t* out_len); /* 암호화된 메시지 수신 */
 
 #ifdef _WIN32
 typedef DWORD THREAD_RET;
@@ -125,7 +125,7 @@ typedef void* THREAD_ARG;
 #endif
 
 /* 수신 스레드 함수 */
-static THREAD_RET THREAD_CALLCONV receive_thread(THREAD_ARG param) {
+static THREAD_RET THREAD_CALLCONV receive_thread(THREAD_ARG param) { /* 수신 스레드 함수 */
     (void)param;
     char received[2048];
     size_t recv_len;
@@ -170,7 +170,7 @@ static THREAD_RET THREAD_CALLCONV receive_thread(THREAD_ARG param) {
  * Windows UTF-8 콘솔 입력 헬퍼 함수
  * -------------------------------------------------------------------------- */
 #ifdef _WIN32
-static int read_utf8_line(char* buf, size_t buf_size) {
+static int read_utf8_line(char* buf, size_t buf_size) { /* UTF-8 콘솔 입력 헬퍼 함수 */
     HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
     if (hIn == INVALID_HANDLE_VALUE) {
         buf[0] = '\0';
@@ -200,7 +200,7 @@ static int read_utf8_line(char* buf, size_t buf_size) {
     return (int)strlen(buf);
 }
 #else
-static int read_utf8_line(char* buf, size_t buf_size) {
+static int read_utf8_line(char* buf, size_t buf_size) { /* UTF-8 콘솔 입력 헬퍼 함수 */
     if (!fgets(buf, (int)buf_size, stdin)) {
         buf[0] = '\0';
         return 0;
@@ -214,7 +214,7 @@ static int read_utf8_line(char* buf, size_t buf_size) {
 
 #define BENCH_SIZE (10u * 1024u * 1024u) /* 10 MiB */
 
-static void print_hex(const char* label, const uint8_t* buf, size_t len) {
+static void print_hex(const char* label, const uint8_t* buf, size_t len) { /* 바이너리 데이터를 16진수로 출력 */
     printf("%s (%zu bytes): ", label, len);
     for (size_t i = 0; i < len; i++) {
         printf("%02X", buf[i]);
@@ -222,7 +222,7 @@ static void print_hex(const char* label, const uint8_t* buf, size_t len) {
     printf("\n");
 }
 
-static const char* aes_status_str(AESStatus st) {
+static const char* aes_status_str(AESStatus st) { /* AES 상태 코드를 문자열로 변환 */
     switch (st) {
     case AES_OK:            return "AES_OK";
     case AES_ERR_BAD_PARAM: return "AES_ERR_BAD_PARAM";
@@ -241,7 +241,7 @@ static const char* aes_status_str(AESStatus st) {
     }
 }
 
-static double now_seconds(void) {
+static double now_seconds(void) { /* 현재 시간을 초 단위로 반환 */
     return (double)clock() / (double)CLOCKS_PER_SEC;
 }
 
@@ -257,7 +257,7 @@ static const uint8_t DEMO_KEY256[32] = {
  * AES1 — CTR 암호화 (시스템용)
  * -------------------------------------------------------------------------- */
 
-static void aes1_ctr_encrypt(const uint8_t* msg, size_t msg_len) {
+static void aes1_ctr_encrypt(const uint8_t* msg, size_t msg_len) { /* AES1 CTR 모드 암호화 */
     printf("\n========================================\n");
     printf(" [AES1-CTR] 암호화\n");
     printf("========================================\n");
@@ -301,7 +301,7 @@ static void aes1_ctr_encrypt(const uint8_t* msg, size_t msg_len) {
  * 패딩 선택 헬퍼 함수
  * -------------------------------------------------------------------------- */
 
-static const char* padding_name(AESPadding pad) {
+static const char* padding_name(AESPadding pad) { /* 패딩 타입을 문자열로 변환 */
     switch (pad) {
         case AES_PADDING_NONE:      return "NONE (16바이트 배수 필수)";
         case AES_PADDING_PKCS7:     return "PKCS#7";
@@ -342,7 +342,7 @@ static AESPadding select_padding(void) {
  * AES1 — ECB 암호화 (시스템용)
  * -------------------------------------------------------------------------- */
 
-static void aes1_ecb_encrypt(const uint8_t* msg, size_t msg_len) {
+static void aes1_ecb_encrypt(const uint8_t* msg, size_t msg_len) { /* AES1 ECB 모드 암호화 */
     printf("\n========================================\n");
     printf(" [AES1-ECB] 암호화\n");
     printf("========================================\n");
@@ -387,7 +387,7 @@ static void aes1_ecb_encrypt(const uint8_t* msg, size_t msg_len) {
  * AES1 — CBC 암호화 (시스템용)
  * -------------------------------------------------------------------------- */
 
-static void aes1_cbc_encrypt(const uint8_t* msg, size_t msg_len) {
+static void aes1_cbc_encrypt(const uint8_t* msg, size_t msg_len) { /* AES1 CBC 모드 암호화 */
     printf("\n========================================\n");
     printf(" [AES1-CBC] 암호화\n");
     printf("========================================\n");
@@ -443,7 +443,7 @@ static void aes1_cbc_encrypt(const uint8_t* msg, size_t msg_len) {
  * CRACK_AES(보안형) — 암호화 (시스템용)
  * -------------------------------------------------------------------------- */
 
-static void crack_aes_encrypt(const uint8_t* msg, size_t msg_len) {
+static void crack_aes_encrypt(const uint8_t* msg, size_t msg_len) { /* CRACK_AES 보안형 암호화 */
     printf("\n========================================\n");
     printf(" [CRACK_AES] 보안형 암호화 (CTR + HMAC)\n");
     printf("========================================\n");
@@ -507,7 +507,7 @@ static void crack_aes_encrypt(const uint8_t* msg, size_t msg_len) {
 /* --------------------------------------------------------------------------
  * Hex 문자열 → 바이트 배열 변환
  * -------------------------------------------------------------------------- */
-static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_cap, size_t* out_len) {
+static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_cap, size_t* out_len) { /* 16진수 문자열을 바이트 배열로 변환 */
     size_t hex_len = strlen(hex);
     if (hex_len % 2 != 0) return -1;  /* 짝수 길이여야 함 */
     
@@ -526,7 +526,7 @@ static int hex_to_bytes(const char* hex, uint8_t* out, size_t out_cap, size_t* o
 /* --------------------------------------------------------------------------
  * AES1 복호화 전용 함수들
  * -------------------------------------------------------------------------- */
-static void aes1_ecb_decrypt_only(void) {
+static void aes1_ecb_decrypt_only(void) { /* AES1 ECB 모드 복호화 전용 함수 */
     printf("\n========================================\n");
     printf(" [AES1] ECB 복호화\n");
     printf("========================================\n");
@@ -576,7 +576,7 @@ static void aes1_ecb_decrypt_only(void) {
     print_hex("[AES1-ECB] 복호화 결과 (hex)", dec, dec_len);
 }
 
-static void aes1_cbc_decrypt_only(void) {
+static void aes1_cbc_decrypt_only(void) { /* AES1 CBC 모드 복호화 전용 함수 */
     printf("\n========================================\n");
     printf(" [AES1] CBC 복호화\n");
     printf("========================================\n");
@@ -642,7 +642,7 @@ static void aes1_cbc_decrypt_only(void) {
     print_hex("[AES1-CBC] 복호화 결과 (hex)", dec, dec_len);
 }
 
-static void aes1_ctr_decrypt_only(void) {
+static void aes1_ctr_decrypt_only(void) { /* AES1 CTR 모드 복호화 전용 함수 */
     printf("\n========================================\n");
     printf(" [AES1] CTR 복호화\n");
     printf("========================================\n");
@@ -700,7 +700,7 @@ static void aes1_ctr_decrypt_only(void) {
 /* --------------------------------------------------------------------------
  * CRACK_AES 복호화 전용 함수 (CTR + HMAC 검증)
  * -------------------------------------------------------------------------- */
-static void crack_aes_decrypt_only(void) {
+static void crack_aes_decrypt_only(void) { /* CRACK_AES 복호화 전용 함수 */
     printf("\n=================================================\n");
     printf(" [CRACK_AES] 보안형 복호화 (CTR + HMAC 검증)\n");
     printf("=================================================\n");
@@ -806,7 +806,7 @@ static void crack_aes_decrypt_only(void) {
  * ========================================================================== */
 
 /* Winsock 초기화 */
-static int init_socket(void) {
+static int init_socket(void) { /* 소켓 초기화 */
 #ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
@@ -818,14 +818,14 @@ static int init_socket(void) {
 }
 
 /* Winsock 정리 */
-static void cleanup_socket(void) {
+static void cleanup_socket(void) { /* 소켓 정리 */
 #ifdef _WIN32
     WSACleanup();
 #endif
 }
 
 /* 암호화 방식 선택 메뉴 */
-static void select_crypto_mode(void) {
+static void select_crypto_mode(void) { /* 암호화 모드 선택 */
     char buf[64];
     
     printf("\n========================================\n");
@@ -873,7 +873,7 @@ static void select_crypto_mode(void) {
 }
 
 /* 메시지 암호화 후 전송 (선택된 모드에 따라) */
-static int send_encrypted_message(SOCKET sock, const char* plaintext, size_t len) {
+static int send_encrypted_message(SOCKET sock, const char* plaintext, size_t len) { /* 암호화된 메시지 전송 */
     uint8_t packet[BUFFER_SIZE];
     size_t offset = 0;
     
@@ -977,7 +977,7 @@ static int send_encrypted_message(SOCKET sock, const char* plaintext, size_t len
 }
 
 /* 암호화된 메시지 수신 후 복호화 (모드 자동 감지) */
-static int recv_encrypted_message(SOCKET sock, char* plaintext, size_t max_len, size_t* out_len) {
+static int recv_encrypted_message(SOCKET sock, char* plaintext, size_t max_len, size_t* out_len) { /* 암호화된 메시지 수신 */
     uint8_t packet[BUFFER_SIZE];
     int received = recv(sock, (char*)packet, sizeof(packet), 0);
     if (received <= 0) return -1;
@@ -1109,7 +1109,7 @@ static int recv_encrypted_message(SOCKET sock, char* plaintext, size_t max_len, 
 }
 
 /* 로컬 IP 주소 출력 (같은 와이파이 네트워크용) */
-static void print_local_ip(void) {
+static void print_local_ip(void) { /* 로컬 IP 주소 출력 */
     char hostname[256];
     if (gethostname(hostname, sizeof(hostname)) == 0) {
         struct hostent* host = gethostbyname(hostname);
@@ -1134,7 +1134,7 @@ static void print_local_ip(void) {
 }
 
 /* 서버 모드 */
-static void run_server(int port) {
+static void run_server(int port) { /* 서버 모드 실행 */
     printf("\n========================================\n");
     printf(" [서버 모드] 포트 %d\n", port);
     printf("========================================\n");
@@ -1272,7 +1272,7 @@ static void run_server(int port) {
 }
 
 /* 클라이언트 모드 */
-static void run_client(const char* server_ip, int port) {
+static void run_client(const char* server_ip, int port) { /* 클라이언트 모드 실행 */
     printf("\n========================================\n");
     printf(" [클라이언트 모드] %s:%d 연결 중...\n", server_ip, port);
     printf("========================================\n");
@@ -1396,7 +1396,7 @@ static void run_client(const char* server_ip, int port) {
 /* --------------------------------------------------------------------------
  * 로컬 암호화/복호화 테스트 (기존 기능)
  * -------------------------------------------------------------------------- */
-static void run_local_test(void) {
+static void run_local_test(void) { /* 로컬 암호화/복호화 테스트 */
     /* 암호화/복호화 선택 */
     printf("\n작업을 선택하세요:\n");
     printf("  [1] 암호화 (평문 → 암호문)\n");
@@ -1497,7 +1497,7 @@ static void run_local_test(void) {
  * main: 모드 선택 (로컬/서버/클라이언트)
  * -------------------------------------------------------------------------- */
 
-int main(void) {
+int main(void) { /* 프로그램 진입점 */
 #ifdef _WIN32
     SetConsoleOutputCP(65001);
     SetConsoleCP(65001);

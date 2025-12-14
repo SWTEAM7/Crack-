@@ -107,7 +107,7 @@
   *          최상위 비트가 1이면 기약다항식 0x11B (x^8 + x^4 + x^3 + x + 1)와 XOR
   *          MixColumns와 키 확장에서 사용
   */
- static inline uint8_t xtime(uint8_t x){ 
+ static inline uint8_t xtime(uint8_t x){ /* GF(2^8)에서 x를 곱하는 함수 */ 
      return (uint8_t)((x<<1) ^ ((x&0x80)?0x1B:0x00)); 
  }
  /**
@@ -119,7 +119,7 @@
   *          비트 단위로 곱셈을 수행하여 효율적
   *          InvMixColumns에서 사용 (복잡한 계수 곱셈)
   */
- static inline uint8_t mul(uint8_t x, uint8_t y) {
+ static inline uint8_t mul(uint8_t x, uint8_t y) { /* GF(2^8)에서 두 바이트를 곱하는 함수 */
      uint8_t r = 0;
      while (y) { 
          if (y & 1) r ^= x;  // y의 최하위 비트가 1이면 r에 x를 더함 (XOR)
@@ -141,7 +141,7 @@
   * @details 컨텍스트가 유효하면 last_err를 설정하고,
   *          에러 콜백이 등록되어 있으면 호출
   */
- static void aes_set_error(AES_ctx* ctx, AESStatus code, const char* msg) {
+ static void aes_set_error(AES_ctx* ctx, AESStatus code, const char* msg) { /* AES 컨텍스트에 에러 상태 설정 및 콜백 호출 */
      if (ctx) ctx->last_err = code;
      if (ctx && ctx->on_error) ctx->on_error(code, msg, ctx->err_ud);
  }
@@ -157,7 +157,7 @@
   *          두 영역이 완전히 분리되어 있으면 안전
   */
  static int no_forbidden_overlap(const void* p1, size_t n1,
-                                 const void* p2, size_t n2) {
+                                 const void* p2, size_t n2) { /* 두 메모리 영역이 겹치지 않는지 확인 */
      const uint8_t* a=(const uint8_t*)p1; 
      const uint8_t* b=(const uint8_t*)p2;
      // a 영역이 b 영역의 앞에 완전히 있거나, b 영역이 a 영역의 앞에 완전히 있으면 OK
@@ -170,7 +170,7 @@
   * @return 에러 코드에 해당하는 문자열
   * @details 사용자에게 에러 메시지를 표시할 때 사용
   */
- const char* AES_strerror(AESStatus code) {
+ const char* AES_strerror(AESStatus code) { /* 에러 코드를 문자열로 변환 */
      switch (code) {
          case AES_OK: return "AES_OK";
          case AES_ERR_BAD_PARAM: return "AES_ERR_BAD_PARAM";
@@ -199,7 +199,7 @@
   * @return 32비트 워드 값
   * @details 키 확장에서 바이트 배열을 워드로 변환할 때 사용
   */
- static inline uint32_t pack_be(const uint8_t b[4]) {
+ static inline uint32_t pack_be(const uint8_t b[4]) { /* 4바이트 배열을 big-endian 32비트 워드로 변환 */
      return ((uint32_t)b[0]<<24)|((uint32_t)b[1]<<16)|((uint32_t)b[2]<<8)|b[3];
  }
  
@@ -209,7 +209,7 @@
   * @param b 출력 4바이트 배열 (big-endian 순서)
   * @details 워드를 바이트 배열로 분해할 때 사용
   */
- static inline void unpack_be(uint32_t w, uint8_t b[4]) {
+ static inline void unpack_be(uint32_t w, uint8_t b[4]) { /* 32비트 워드를 big-endian 4바이트 배열로 변환 */
      b[0]=(uint8_t)(w>>24); b[1]=(uint8_t)(w>>16); b[2]=(uint8_t)(w>>8); b[3]=(uint8_t)w;
  }
  
@@ -219,7 +219,7 @@
   * @return 각 바이트에 sbox를 적용한 결과 워드
   * @details 키 확장에서 사용되며, 최적화를 위해 unpack/pack 없이 직접 처리
   */
- static inline uint32_t SubWord(uint32_t w) {
+ static inline uint32_t SubWord(uint32_t w) { /* 워드의 각 바이트에 S-box를 적용 */
      // 최적화: unpack/pack 제거하고 직접 sbox 적용
      return ((uint32_t)sbox[(uint8_t)(w>>24)]<<24) |
             ((uint32_t)sbox[(uint8_t)(w>>16)]<<16) |
@@ -233,7 +233,7 @@
   * @return 순환 시프트된 워드
   * @details 키 확장에서 사용 (예: [a,b,c,d] -> [b,c,d,a])
   */
- static inline uint32_t RotWord(uint32_t w) {
+ static inline uint32_t RotWord(uint32_t w) { /* 워드를 왼쪽으로 1바이트 순환 시프트 */
      return (w<<8) | (w>>24);
  }
  
@@ -256,7 +256,7 @@
  *    - 그 외: 이전 워드 그대로 사용
  * 3. 생성된 라운드 키는 ctx->roundKeys에 저장
  */
-static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen) {
+static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen) { /* 키 확장 함수 - 원본 키를 라운드 키로 확장 */
     int Nk = (int)keyLen / 4;                // 키 워드 수: AES128=4, AES192=6, AES256=8
     int Nb = 4;                              // 블록 크기 (워드 단위, 항상 4)
     int W  = Nb * (ctx->Nr + 1);             // 총 필요한 워드 수: (라운드+1) * 4
@@ -301,7 +301,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   * @details 상태 행렬의 각 바이트를 라운드 키와 XOR 연산
   *          최적화: unpack 제거하고 직접 XOR 수행
   */
- static inline void AddRoundKey(uint8_t s[16], const uint32_t* rk) {
+ static inline void AddRoundKey(uint8_t s[16], const uint32_t* rk) { /* 라운드 키 추가 (AddRoundKey) */
      // 최적화: unpack 제거하고 직접 XOR 수행
      for (int c=0;c<4;c++){  // 각 열(column)에 대해
          uint32_t w = rk[c];  // 라운드 키 워드 가져오기
@@ -319,7 +319,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   *          비선형 변환으로 암호 강도 제공
   *          최적화: 컴파일러가 루프 언롤링 가능
   */
- static inline void SubBytes(uint8_t s[16]) {
+ static inline void SubBytes(uint8_t s[16]) { /* 바이트 대체 (SubBytes) - 암호화용 */
      for(int i=0;i<16;i++) s[i]=sbox[s[i]];
  }
  
@@ -329,7 +329,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   * @details 각 바이트를 inv_sbox 테이블을 통해 역 대체
   *          SubBytes의 역변환
   */
- static inline void InvSubBytes(uint8_t s[16]) {
+ static inline void InvSubBytes(uint8_t s[16]) { /* 역 바이트 대체 (InvSubBytes) - 복호화용 */
      for(int i=0;i<16;i++) s[i]=inv_sbox[s[i]];
  }
  /**
@@ -342,7 +342,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   *          - 3행: 3바이트 왼쪽 시프트
   *          상태 행렬은 열 우선 순서로 저장됨: s[4*c+r] = 행 r, 열 c
   */
- static inline void ShiftRows(uint8_t s[16]) {
+ static inline void ShiftRows(uint8_t s[16]) { /* 행 시프트 (ShiftRows) - 암호화용 */
      uint8_t t1, t2;
      // 1행 (인덱스 1,5,9,13): 1바이트 왼쪽 시프트
      t1=s[1]; s[1]=s[5]; s[5]=s[9]; s[9]=s[13]; s[13]=t1;
@@ -360,7 +360,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   *          - 2행: 2바이트 오른쪽 시프트 (2바이트 왼쪽 시프트의 역)
   *          - 3행: 1바이트 오른쪽 시프트 (3바이트 왼쪽 시프트의 역)
   */
- static inline void InvShiftRows(uint8_t s[16]) {
+ static inline void InvShiftRows(uint8_t s[16]) { /* 역 행 시프트 (InvShiftRows) - 복호화용 */
      uint8_t t1, t2;
      // 1행: 3바이트 오른쪽 시프트
      t1=s[13]; s[13]=s[9]; s[9]=s[5]; s[5]=s[1]; s[1]=t1;
@@ -381,7 +381,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   *          [03 01 01 02]   [a3]
   *          최적화: xtime(x) = x*2, x*3 = xtime(x) ^ x
   */
- static inline void MixColumns(uint8_t s[16]) {
+ static inline void MixColumns(uint8_t s[16]) { /* 열 혼합 (MixColumns) - 암호화용 */
      for (int c=0;c<4;c++){  // 각 열에 대해
          uint8_t *a=&s[4*c];  // 열 시작 주소
          uint8_t a0=a[0],a1=a[1],a2=a[2],a3=a[3];  // 열의 4바이트
@@ -404,7 +404,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
   *          [0B 0D 09 0E]   [a3]
   *          복잡한 계수(14,11,13,9) 때문에 mul 함수 직접 사용
   */
- static inline void InvMixColumns(uint8_t s[16]) {
+ static inline void InvMixColumns(uint8_t s[16]) { /* 역 열 혼합 (InvMixColumns) - 복호화용 */
      for (int c=0;c<4;c++){
          uint8_t *a=&s[4*c];
          uint8_t a0=a[0],a1=a[1],a2=a[2],a3=a[3];
@@ -430,7 +430,7 @@ static void key_expansion(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen)
  *          키 확장을 수행하여 컨텍스트를 초기화합니다.
  *          이 함수를 먼저 호출해야 암호화/복호화가 가능합니다.
  */
-AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
+AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){ /* AES 컨텍스트 초기화 */
     if (!ctx || !key) { 
         aes_set_error(ctx, AES_ERR_BAD_PARAM, "null ctx/key"); 
         return AES_ERR_BAD_PARAM; 
@@ -477,7 +477,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
   *          2. Nr-1번의 라운드 (SubBytes -> ShiftRows -> MixColumns -> AddRoundKey)
   *          3. 마지막 라운드 (SubBytes -> ShiftRows -> AddRoundKey, MixColumns 없음)
   */
- void AES_encryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){
+ void AES_encryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){ /* 단일 블록 암호화 (16바이트) */
      if (!ctx || !in || !out) { 
          aes_set_error(ctx, AES_ERR_BAD_PARAM, "null block io"); 
          return; 
@@ -519,7 +519,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
   *          3. 마지막 라운드 (InvShiftRows -> InvSubBytes -> AddRoundKey, InvMixColumns 없음)
   *          라운드 키를 역순으로 사용
   */
- void AES_decryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){
+ void AES_decryptBlock(AES_ctx* ctx, const uint8_t in[16], uint8_t out[16]){ /* 단일 블록 복호화 (16바이트) */
      if (!ctx || !in || !out) { 
          aes_set_error(ctx, AES_ERR_BAD_PARAM, "null block io"); 
          return; 
@@ -572,7 +572,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
   */
  AESStatus AES_applyPadding(const uint8_t* in, size_t in_len,
                             uint8_t* out, size_t out_cap,
-                            AESPadding padding, size_t* out_len){
+                            AESPadding padding, size_t* out_len){ /* 패딩 적용 함수 */
      if (!in || !out || !out_len) return AES_ERR_BAD_PARAM;
      if (padding == AES_PADDING_ZERO_FORBIDDEN) return AES_ERR_BAD_PARAM;
  
@@ -609,7 +609,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
   *          패딩이 유효하지 않으면 AES_ERR_PADDING 반환
   */
  AESStatus AES_stripPadding(const uint8_t* in, size_t in_len,
-                            AESPadding padding, size_t* out_plain_len){
+                            AESPadding padding, size_t* out_plain_len){ /* 패딩 제거 함수 */
      if (!in || !out_plain_len) return AES_ERR_BAD_PARAM;
      if ((in_len==0) || (in_len % AES_BLOCK)) return AES_ERR_LENGTH;
  
@@ -665,7 +665,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
  AESStatus AES_encryptECB(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
-                          AESPadding padding){
+                          AESPadding padding){ /* ECB 모드 암호화 */
      if (!ctx || !in || !out || !out_len) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
      if (!no_forbidden_overlap(in,in_len,out,out_cap)) { aes_set_error(ctx, AES_ERR_OVERLAP, "in/out overlap"); return AES_ERR_OVERLAP; }
  
@@ -692,7 +692,7 @@ AESStatus AES_init(AES_ctx* ctx, const uint8_t* key, AESKeyLength keyLen){
 AESStatus AES_decryptECB(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
-                          AESPadding padding){
+                          AESPadding padding){ /* ECB 모드 복호화 */
      if (!ctx || !in || !out || !out_len) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
      if (in_len % AES_BLOCK) { aes_set_error(ctx, AES_ERR_LENGTH, "not block-aligned"); return AES_ERR_LENGTH; }
      if (out_cap < in_len)   { aes_set_error(ctx, AES_ERR_BUF_SMALL, "out small"); return AES_ERR_BUF_SMALL; }
@@ -729,7 +729,7 @@ AESStatus AES_decryptECB(AES_ctx* ctx,
  AESStatus AES_encryptCBC(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
-                          uint8_t iv[16], AESPadding padding){
+                          uint8_t iv[16], AESPadding padding){ /* CBC 모드 암호화 */
      if (!ctx || !in || !out || !out_len || !iv) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
      if (!no_forbidden_overlap(in,in_len,out,out_cap)) { aes_set_error(ctx, AES_ERR_OVERLAP, "in/out overlap"); return AES_ERR_OVERLAP; }
  
@@ -768,7 +768,7 @@ AESStatus AES_decryptECB(AES_ctx* ctx,
 AESStatus AES_decryptCBC(AES_ctx* ctx,
                           const uint8_t* in, size_t in_len,
                           uint8_t* out, size_t out_cap, size_t* out_len,
-                          uint8_t iv[16], AESPadding padding){
+                          uint8_t iv[16], AESPadding padding){ /* CBC 모드 복호화 */
      if (!ctx || !in || !out || !out_len || !iv) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
      if (in_len % AES_BLOCK) { aes_set_error(ctx, AES_ERR_LENGTH, "not block-aligned"); return AES_ERR_LENGTH; }
      if (out_cap < in_len)   { aes_set_error(ctx, AES_ERR_BUF_SMALL, "out small"); return AES_ERR_BUF_SMALL; }
@@ -812,7 +812,7 @@ AESStatus AES_decryptCBC(AES_ctx* ctx,
  AESStatus AES_cryptCTR(AES_ctx* ctx,
                         const uint8_t* in, size_t len,
                         uint8_t* out,
-                        uint8_t nonce_counter[16]){
+                        uint8_t nonce_counter[16]){ /* CTR 모드 암호화/복호화 */
      if (!ctx || !in || !out || !nonce_counter) { aes_set_error(ctx, AES_ERR_BAD_PARAM, "null param"); return AES_ERR_BAD_PARAM; }
  
      uint8_t ctr[16];
