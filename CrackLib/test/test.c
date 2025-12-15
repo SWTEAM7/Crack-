@@ -9,7 +9,7 @@
  * 
  * 빌드:
  *   Windows: cl /utf-8 /std:c17 /O2 /W4 /D_CRT_SECURE_NO_WARNINGS test.c aes.c crack_aes.c sha512.c
- *   Linux/Mac: gcc -O2 -std=c17 -Wall test1.c aes.c crack_aes.c sha512.c -o test
+ *   Linux/Mac: clang aes.c crack_aes.c sha512.c test.c -O3 -std=c99 -Wall -Wextra -pedantic -o test
  * ========================================================================= */
 
 /* 표준 C 라이브러리 헤더 */

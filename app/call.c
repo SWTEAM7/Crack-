@@ -7,6 +7,8 @@
  *
  * 빌드 (Windows):
  *   cl /utf-8 /std:c17 /O2 /W4 /D_CRT_SECURE_NO_WARNINGS call.c aes.c crack_aes.c sha512.c ws2_32.lib advapi32.lib
+ * Linux / MacOS:
+ *   clang -O2 -std=c17 call.c aes.c crack_aes.c sha512.c -pthread -o call
  * ------------------------------------------------------------------------- */
 
 #include <stdio.h>
