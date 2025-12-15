@@ -13,7 +13,7 @@ Crack! 라이브러리는 다음 두 가지 프로파일을 제공합니다.
 - 지원 언어: **C99** (라이브러리 코어)
 - 데모/예제: C17에서도 컴파일 가능
 - 의존성: 표준 C 라이브러리, OS CSPRNG 
-  (Windows BCryptGenRandom, macOS arc4random_buf, Linux /dev/urandom)
+   (Windows BCryptGenRandom, macOS arc4random_buf, Linux /dev/urandom)
 
 ---
 
