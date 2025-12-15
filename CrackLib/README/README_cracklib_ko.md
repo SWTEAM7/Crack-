@@ -10,10 +10,10 @@ Crack! 라이브러리는 다음 두 가지 프로파일을 제공합니다.
   - AES-CTR / AES-CBC + HMAC-SHA-512 (Encrypt-then-MAC 구조)  
   - nonce/IV 재사용 가드 옵션 제공
 
-지원 언어: **C99** (라이브러리 코어)
-데모/예제: C17에서도 컴파일 가능
-의존성: 표준 C 라이브러리, OS CSPRNG 
-(Windows BCryptGenRandom, macOS arc4random_buf, Linux /dev/urandom)
+- 지원 언어: **C99** (라이브러리 코어)
+- 데모/예제: C17에서도 컴파일 가능
+- 의존성: 표준 C 라이브러리, OS CSPRNG 
+  (Windows BCryptGenRandom, macOS arc4random_buf, Linux /dev/urandom)
 
 ---
 
