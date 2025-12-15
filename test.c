@@ -69,7 +69,10 @@ static const char* aes_status_str(AESStatus st) { /* AES 상태 코드를 문자
     case AES_ERR_STATE:     return "AES_ERR_STATE";      /* 잘못된 상태 */
     case AES_ERR_LENGTH:    return "AES_ERR_LENGTH";     /* 길이 오류 */
 #ifdef AES_ERR_AUTH
+#pragma warning(push)
+#pragma warning(disable: 4063)  /* case 값이 열거형에 없을 수 있음 (조건부 정의) */
     case AES_ERR_AUTH:      return "AES_ERR_AUTH";       /* 인증 실패 (HMAC 검증 실패 등) */
+#pragma warning(pop)
 #endif
     default:                return "AES_ERR_UNKNOWN";    /* 알 수 없는 오류 */
     }
