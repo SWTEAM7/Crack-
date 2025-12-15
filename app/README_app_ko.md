@@ -23,6 +23,7 @@
 
 ### 2.1 디렉토리 구조 (예시)
 
+```text
 app/
  ├─ aes.c
  ├─ aes.h
@@ -31,6 +32,7 @@ app/
  ├─ sha512.c
  ├─ sha512.h
  └─ call.c      // 본 데모 앱 메인 파일
+```
 
 
 ### 2.2 Windows (MSVC cl) 기준 빌드
